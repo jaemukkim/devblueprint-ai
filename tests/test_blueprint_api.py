@@ -2,7 +2,7 @@ from fastapi.testclient import TestClient
 
 from app.core.config import settings
 from app.main import app
-from app.services import blueprint_generator
+from app.repositories.blueprint_repository import blueprint_repository
 
 
 client = TestClient(app)
@@ -15,10 +15,23 @@ def test_health_check_returns_ok() -> None:
     assert response.json() == {"status": "ok"}
 
 
+def test_cors_allows_react_dev_origin() -> None:
+    response = client.options(
+        "/api/v1/blueprint/generate",
+        headers={
+            "Origin": "http://localhost:5173",
+            "Access-Control-Request-Method": "POST",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://localhost:5173"
+
+
 def test_generate_blueprint_returns_expected_shape(monkeypatch) -> None:
     # API 테스트는 외부 네트워크에 의존하지 않도록 placeholder 응답 경로를 사용합니다.
     monkeypatch.setattr(settings, "use_openai", False)
-    blueprint_generator._BLUEPRINT_CACHE.clear()
+    blueprint_repository.clear()
 
     response = client.post(
         "/api/v1/blueprint/generate",
@@ -45,7 +58,7 @@ def test_generate_blueprint_rejects_short_idea() -> None:
 
 def test_generate_blueprint_reuses_cached_result(monkeypatch) -> None:
     monkeypatch.setattr(settings, "use_openai", False)
-    blueprint_generator._BLUEPRINT_CACHE.clear()
+    blueprint_repository.clear()
 
     payload = {"idea": "  스포츠   야구 분석 및 승부 예측 서비스  "}
     first_response = client.post("/api/v1/blueprint/generate", json=payload)
@@ -56,5 +69,5 @@ def test_generate_blueprint_reuses_cached_result(monkeypatch) -> None:
 
     assert first_response.status_code == 200
     assert second_response.status_code == 200
-    assert len(blueprint_generator._BLUEPRINT_CACHE) == 1
+    assert blueprint_repository.count() == 1
     assert first_response.json() == second_response.json()
