@@ -104,6 +104,7 @@ Later upgrade possible:
 - Redis
 - pgvector
 - LangGraph
+- RAG
 - Docker
 
 ---
@@ -158,15 +159,36 @@ User Input
       "method": "GET | POST | PUT | PATCH | DELETE",
       "path": "",
       "description": "",
-      "request": {},
-      "response": {}
+      "request": [
+        {
+          "name": "",
+          "type": "",
+          "description": "",
+          "required": true
+        }
+      ],
+      "response": [
+        {
+          "name": "",
+          "type": "",
+          "description": "",
+          "required": true
+        }
+      ]
     }
   ],
   "database_schema": [
     {
       "name": "",
       "description": "",
-      "columns": []
+      "columns": [
+        {
+          "name": "",
+          "type": "",
+          "description": "",
+          "constraints": []
+        }
+      ]
     }
   ],
   "sequence_diagram": ""
@@ -178,18 +200,23 @@ User Input
 # Initial Project Structure
 
 ```text
-app/
-  api/v1/
-    blueprint.py
-  core/
-    config.py
-  schemas/
-    blueprint.py
-  services/
-    blueprint_generator.py
-  main.py
+backend/
+  app/
+    api/v1/
+      blueprint.py
+    core/
+      config.py
+    schemas/
+      blueprint.py
+    services/
+      blueprint_generator.py
+      llm_client.py
+      prompts.py
+    main.py
 frontend/
   streamlit_app.py
 docs/
   PROJECT_CONTEXT.md
+tests/
+  test_blueprint_api.py
 ```
