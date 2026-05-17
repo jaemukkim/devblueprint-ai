@@ -17,7 +17,7 @@ app = FastAPI(
 # 운영 환경에서는 frontend_origins에 실제 배포 도메인만 넣는 방식으로 좁히면 됩니다.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.frontend_origins,
+    allow_origins=settings.frontend_origin_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
