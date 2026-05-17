@@ -1,6 +1,5 @@
-from copy import deepcopy
-
 from app.core.config import settings
+from app.repositories.blueprint_repository import blueprint_repository
 from app.schemas.blueprint import (
     ApiField,
     ApiSpec,
@@ -18,18 +17,14 @@ from app.services.prompts import build_blueprint_prompt
 
 MAX_OPENAI_GENERATION_ATTEMPTS = 3
 
-# 같은 idea를 반복 생성할 때 OpenAI 토큰을 다시 쓰지 않기 위한 간단한 in-memory cache입니다.
-# 서버를 재시작하면 비워지므로, 장기 저장이 필요해지면 DB나 파일 캐시로 교체하면 됩니다.
-_BLUEPRINT_CACHE: dict[str, BlueprintResponse] = {}
-
 
 def generate_blueprint(payload: BlueprintRequest) -> BlueprintResponse:
     """서비스 아이디어를 받아 시스템 설계도 응답을 생성합니다."""
     cache_key = build_cache_key(payload.idea)
 
-    if cache_key in _BLUEPRINT_CACHE:
-        # 캐시된 Pydantic 모델을 그대로 반환하면 이후 코드가 객체를 수정할 때 캐시도 오염될 수 있습니다.
-        return deepcopy(_BLUEPRINT_CACHE[cache_key])
+    cached_blueprint = blueprint_repository.get(cache_key)
+    if cached_blueprint is not None:
+        return cached_blueprint
 
     # USE_OPENAI=false이면 API key가 있더라도 실제 OpenAI 호출을 하지 않습니다.
     # 개발 중 화면 확인이나 반복 테스트를 할 때 토큰 비용을 막기 위한 안전장치입니다.
@@ -40,7 +35,7 @@ def generate_blueprint(payload: BlueprintRequest) -> BlueprintResponse:
         blueprint = generate_blueprint_with_retry(user_prompt)
 
     validate_blueprint_quality(blueprint)
-    _BLUEPRINT_CACHE[cache_key] = deepcopy(blueprint)
+    blueprint_repository.save(cache_key, blueprint)
     return blueprint
 
 
@@ -125,11 +120,26 @@ def build_placeholder_blueprint(payload: BlueprintRequest) -> BlueprintResponse:
                 path="/api/v1/blueprint/generate",
                 description="자연어 서비스 아이디어를 받아 시스템 설계도를 생성합니다.",
                 request=[
-                    ApiField(name="idea", type="string", description="사용자가 만들고 싶은 서비스 아이디어입니다.", required=True)
+                    ApiField(
+                        name="idea",
+                        type="string",
+                        description="사용자가 만들고 싶은 서비스 아이디어입니다.",
+                        required=True,
+                    )
                 ],
                 response=[
-                    ApiField(name="overview", type="string", description="생성된 시스템 설계도의 요약입니다.", required=True),
-                    ApiField(name="features", type="array", description="핵심 기능 목록입니다.", required=True),
+                    ApiField(
+                        name="overview",
+                        type="string",
+                        description="생성된 시스템 설계도의 요약입니다.",
+                        required=True,
+                    ),
+                    ApiField(
+                        name="features",
+                        type="array",
+                        description="핵심 기능 목록입니다.",
+                        required=True,
+                    ),
                 ],
             ),
             ApiSpec(
@@ -138,7 +148,12 @@ def build_placeholder_blueprint(payload: BlueprintRequest) -> BlueprintResponse:
                 description="사용자가 빠르게 테스트할 수 있는 샘플 아이디어 목록을 반환합니다.",
                 request=[],
                 response=[
-                    ApiField(name="examples", type="array", description="샘플 서비스 아이디어 목록입니다.", required=True)
+                    ApiField(
+                        name="examples",
+                        type="array",
+                        description="샘플 서비스 아이디어 목록입니다.",
+                        required=True,
+                    )
                 ],
             ),
             ApiSpec(
@@ -146,10 +161,20 @@ def build_placeholder_blueprint(payload: BlueprintRequest) -> BlueprintResponse:
                 path="/api/v1/blueprint/{blueprint_id}",
                 description="저장 기능을 추가했을 때 특정 설계도 결과를 조회합니다.",
                 request=[
-                    ApiField(name="blueprint_id", type="string", description="조회할 설계도 ID입니다.", required=True)
+                    ApiField(
+                        name="blueprint_id",
+                        type="string",
+                        description="조회할 설계도 ID입니다.",
+                        required=True,
+                    )
                 ],
                 response=[
-                    ApiField(name="blueprint", type="object", description="저장된 설계도 결과입니다.", required=True)
+                    ApiField(
+                        name="blueprint",
+                        type="object",
+                        description="저장된 설계도 결과입니다.",
+                        required=True,
+                    )
                 ],
             ),
             ApiSpec(
@@ -158,7 +183,12 @@ def build_placeholder_blueprint(payload: BlueprintRequest) -> BlueprintResponse:
                 description="저장 기능을 추가했을 때 최근 생성된 설계도 목록을 조회합니다.",
                 request=[],
                 response=[
-                    ApiField(name="items", type="array", description="최근 생성된 설계도 목록입니다.", required=True)
+                    ApiField(
+                        name="items",
+                        type="array",
+                        description="최근 생성된 설계도 목록입니다.",
+                        required=True,
+                    )
                 ],
             ),
         ],
@@ -222,17 +252,17 @@ def build_placeholder_blueprint(payload: BlueprintRequest) -> BlueprintResponse:
             "  participant User as 사용자\n"
             "  participant UI as Streamlit 화면\n"
             "  participant API as FastAPI 서버\n"
-            "  participant Cache as In-memory Cache\n"
+            "  participant Store as Blueprint Repository\n"
             "  participant LLM as OpenAI API\n"
             "  User->>UI: 서비스 아이디어 입력\n"
             "  UI->>API: POST /api/v1/blueprint/generate\n"
-            "  API->>Cache: 같은 idea 결과 확인\n"
+            "  API->>Store: 같은 idea 결과 확인\n"
             "  alt cached result exists\n"
-            "    Cache-->>API: 캐시된 설계도 반환\n"
+            "    Store-->>API: 저장된 설계도 반환\n"
             "  else cache miss\n"
             "    API->>LLM: 구조화된 설계도 요청\n"
             "    LLM-->>API: JSON 설계도 반환\n"
-            "    API->>Cache: 결과 저장\n"
+            "    API->>Store: 결과 저장\n"
             "  end\n"
             "  API-->>UI: 설계도 응답 반환\n"
             "  UI-->>User: 결과 화면 표시\n"
