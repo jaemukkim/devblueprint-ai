@@ -3,6 +3,7 @@ import os
 
 import requests
 import streamlit as st
+import streamlit.components.v1 as components
 
 
 # Streamlit 앱이 호출할 백엔드 API 주소입니다.
@@ -50,14 +51,33 @@ def render_database_schema(database_schema: list[dict]) -> None:
             st.dataframe(table["columns"], use_container_width=True, hide_index=True)
 
 
+def render_mermaid_diagram(source: str, height: int = 420) -> None:
+    """Mermaid 코드를 HTML 컴포넌트 안에서 다이어그램으로 렌더링합니다."""
+    mermaid_source = json.dumps(source)
+    html = f"""
+    <div class="mermaid" id="diagram"></div>
+    <script type="module">
+      import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs";
+      mermaid.initialize({{ startOnLoad: false, theme: "default", securityLevel: "loose" }});
+      const source = {mermaid_source};
+      const target = document.getElementById("diagram");
+      try {{
+        const rendered = await mermaid.render("generated-diagram", source);
+        target.innerHTML = rendered.svg;
+      }} catch (error) {{
+        target.innerHTML = `<pre style="white-space: pre-wrap; color: #b91c1c;">${{error}}</pre>`;
+      }}
+    </script>
+    """
+    components.html(html, height=height, scrolling=True)
+
+
 def format_fields(fields: list[dict]) -> str:
     """API field 목록을 Markdown bullet로 변환합니다."""
     lines = []
     for field in fields:
         required = "required" if field.get("required") else "optional"
-        lines.append(
-            f"- `{field['name']}` ({field['type']}, {required}): {field['description']}"
-        )
+        lines.append(f"- `{field['name']}` ({field['type']}, {required}): {field['description']}")
     return "\n".join(lines) if lines else "- 없음"
 
 
@@ -66,9 +86,7 @@ def format_columns(columns: list[dict]) -> str:
     lines = []
     for column in columns:
         constraints = ", ".join(column.get("constraints", [])) or "none"
-        lines.append(
-            f"- `{column['name']}` ({column['type']}, {constraints}): {column['description']}"
-        )
+        lines.append(f"- `{column['name']}` ({column['type']}, {constraints}): {column['description']}")
     return "\n".join(lines) if lines else "- 없음"
 
 
@@ -86,9 +104,7 @@ def blueprint_to_markdown(blueprint: dict) -> str:
     ]
 
     for feature in blueprint["features"]:
-        lines.append(
-            f"- **{feature['name']}** `{feature['priority']}`: {feature['description']}"
-        )
+        lines.append(f"- **{feature['name']}** `{feature['priority']}`: {feature['description']}")
 
     lines.extend(
         [
@@ -121,18 +137,15 @@ def blueprint_to_markdown(blueprint: dict) -> str:
 
     lines.append("## Database Schema")
     for table in blueprint["database_schema"]:
-        lines.extend(
-            [
-                f"### {table['name']}",
-                table["description"],
-                "",
-                format_columns(table["columns"]),
-                "",
-            ]
-        )
+        lines.extend([f"### {table['name']}", table["description"], "", format_columns(table["columns"]), ""])
 
     lines.extend(
         [
+            "## Database ERD",
+            "```mermaid",
+            blueprint["database_erd"],
+            "```",
+            "",
             "## Sequence Diagram",
             "```mermaid",
             blueprint["sequence_diagram"],
@@ -173,11 +186,64 @@ def show_api_error(response: requests.Response) -> None:
     st.code(json.dumps(error_body, ensure_ascii=False, indent=2), language="json")
 
 
+def render_blueprint(blueprint: dict) -> None:
+    """생성된 설계도 결과를 화면에 렌더링합니다."""
+    st.subheader("개요")
+    st.write(blueprint["overview"])
+
+    st.subheader("핵심 기능")
+    st.dataframe(blueprint["features"], use_container_width=True, hide_index=True)
+
+    st.subheader("기술 스택")
+    stack_col_1, stack_col_2, stack_col_3, stack_col_4 = st.columns(4)
+    with stack_col_1:
+        render_list("Backend", blueprint["tech_stack"]["backend"])
+    with stack_col_2:
+        render_list("Frontend", blueprint["tech_stack"]["frontend"])
+    with stack_col_3:
+        render_list("Database", blueprint["tech_stack"]["database"])
+    with stack_col_4:
+        render_list("AI", blueprint["tech_stack"]["ai"])
+    st.info(blueprint["tech_stack"]["rationale"])
+
+    st.subheader("API 설계")
+    render_api_spec(blueprint["api_spec"])
+
+    st.subheader("데이터베이스 설계")
+    render_database_schema(blueprint["database_schema"])
+
+    st.subheader("데이터베이스 ERD")
+    erd_tab, erd_code_tab = st.tabs(["Diagram", "Code"])
+    with erd_tab:
+        render_mermaid_diagram(blueprint["database_erd"], height=420)
+    with erd_code_tab:
+        st.code(blueprint["database_erd"], language="mermaid")
+
+    st.subheader("시퀀스 다이어그램")
+    sequence_tab, sequence_code_tab = st.tabs(["Diagram", "Code"])
+    with sequence_tab:
+        render_mermaid_diagram(blueprint["sequence_diagram"], height=460)
+    with sequence_code_tab:
+        st.code(blueprint["sequence_diagram"], language="mermaid")
+
+    st.download_button(
+        "Markdown 다운로드",
+        data=blueprint_to_markdown(blueprint),
+        file_name="devblueprint-result.md",
+        mime="text/markdown",
+    )
+
+    with st.expander("원본 JSON 보기"):
+        st.json(blueprint)
+
+
 st.set_page_config(page_title="DevBlueprint AI", layout="wide")
 st.title("DevBlueprint AI")
 
 if "idea" not in st.session_state:
     st.session_state.idea = ""
+if "blueprint" not in st.session_state:
+    st.session_state.blueprint = None
 
 sample_cols = st.columns(len(SAMPLE_IDEAS))
 for index, sample_idea in enumerate(SAMPLE_IDEAS):
@@ -210,43 +276,9 @@ if st.button("설계도 생성", type="primary"):
             show_request_error(exc)
         else:
             if response.ok:
-                blueprint = response.json()
-
-                st.subheader("개요")
-                st.write(blueprint["overview"])
-
-                st.subheader("핵심 기능")
-                st.dataframe(blueprint["features"], use_container_width=True, hide_index=True)
-
-                st.subheader("기술 스택")
-                stack_col_1, stack_col_2, stack_col_3, stack_col_4 = st.columns(4)
-                with stack_col_1:
-                    render_list("Backend", blueprint["tech_stack"]["backend"])
-                with stack_col_2:
-                    render_list("Frontend", blueprint["tech_stack"]["frontend"])
-                with stack_col_3:
-                    render_list("Database", blueprint["tech_stack"]["database"])
-                with stack_col_4:
-                    render_list("AI", blueprint["tech_stack"]["ai"])
-                st.info(blueprint["tech_stack"]["rationale"])
-
-                st.subheader("API 설계")
-                render_api_spec(blueprint["api_spec"])
-
-                st.subheader("데이터베이스 설계")
-                render_database_schema(blueprint["database_schema"])
-
-                st.subheader("시퀀스 다이어그램")
-                st.code(blueprint["sequence_diagram"], language="mermaid")
-
-                st.download_button(
-                    "Markdown 다운로드",
-                    data=blueprint_to_markdown(blueprint),
-                    file_name="devblueprint-result.md",
-                    mime="text/markdown",
-                )
-
-                with st.expander("원본 JSON 보기"):
-                    st.json(blueprint)
+                st.session_state.blueprint = response.json()
             else:
                 show_api_error(response)
+
+if st.session_state.blueprint:
+    render_blueprint(st.session_state.blueprint)
