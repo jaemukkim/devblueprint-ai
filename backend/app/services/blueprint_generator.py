@@ -11,6 +11,7 @@ from app.schemas.blueprint import (
     Feature,
     TechStack,
 )
+from app.services.blueprint_validator import validate_blueprint_quality
 from app.services.llm_client import request_blueprint_from_openai
 from app.services.prompts import build_blueprint_prompt
 
@@ -36,6 +37,7 @@ def generate_blueprint(payload: BlueprintRequest) -> BlueprintResponse:
         user_prompt = build_blueprint_prompt(payload)
         blueprint = request_blueprint_from_openai(user_prompt)
 
+    validate_blueprint_quality(blueprint)
     _BLUEPRINT_CACHE[cache_key] = deepcopy(blueprint)
     return blueprint
 
