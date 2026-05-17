@@ -33,6 +33,7 @@ def test_generate_blueprint_returns_expected_shape(monkeypatch) -> None:
     assert data["tech_stack"]["backend"]
     assert data["api_spec"][0]["method"] == "POST"
     assert data["database_schema"][0]["columns"][0]["constraints"] == ["primary_key"]
+    assert data["database_erd"].startswith("erDiagram")
     assert data["sequence_diagram"].startswith("sequenceDiagram")
 
 

@@ -11,11 +11,12 @@ def validate_blueprint_quality(blueprint: BlueprintResponse) -> None:
     """Pydantic schema 통과 후에도 확인해야 하는 설계 품질 규칙을 검증합니다."""
     errors: list[str] = []
 
-    validate_collection_size("features", blueprint.features, 3, 6, errors)
-    validate_collection_size("api_spec", blueprint.api_spec, 1, 7, errors)
-    validate_collection_size("database_schema", blueprint.database_schema, 1, 5, errors)
+    validate_collection_size("features", blueprint.features, 5, 8, errors)
+    validate_collection_size("api_spec", blueprint.api_spec, 4, 8, errors)
+    validate_collection_size("database_schema", blueprint.database_schema, 3, 6, errors)
     validate_api_paths(blueprint, errors)
     validate_database_names(blueprint, errors)
+    validate_database_erd(blueprint, errors)
     validate_sequence_diagram(blueprint, errors)
 
     if errors:
@@ -61,3 +62,9 @@ def validate_sequence_diagram(blueprint: BlueprintResponse, errors: list[str]) -
     """Mermaid 시퀀스 다이어그램으로 렌더링 가능한 최소 형식을 확인합니다."""
     if not blueprint.sequence_diagram.strip().startswith("sequenceDiagram"):
         errors.append("sequence_diagram must start with 'sequenceDiagram'")
+
+
+def validate_database_erd(blueprint: BlueprintResponse, errors: list[str]) -> None:
+    """Mermaid ERD로 렌더링 가능한 최소 형식을 확인합니다."""
+    if not blueprint.database_erd.strip().startswith("erDiagram"):
+        errors.append("database_erd must start with 'erDiagram'")

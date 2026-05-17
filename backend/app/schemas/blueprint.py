@@ -71,6 +71,7 @@ class BlueprintResponse(BaseModel):
     tech_stack: TechStack
     api_spec: list[ApiSpec]
     database_schema: list[DatabaseTable]
+    database_erd: str
     sequence_diagram: str
 
 

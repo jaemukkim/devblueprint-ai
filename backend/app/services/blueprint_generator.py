@@ -54,11 +54,11 @@ def build_cache_key(idea: str) -> str:
 
 
 def build_placeholder_blueprint(payload: BlueprintRequest) -> BlueprintResponse:
-    """OpenAI 연동 없이도 API와 화면을 검증할 수 있는 예시 응답을 생성합니다."""
+    """OpenAI 연동 없이도 API와 화면을 검증할 수 있는 충분한 예시 응답을 생성합니다."""
     idea = payload.idea.strip()
 
     return BlueprintResponse(
-        overview=f"'{idea}'에 대한 초기 시스템 설계도입니다.",
+        overview=f"'{idea}'에 대한 MVP 중심 시스템 설계도입니다.",
         features=[
             Feature(
                 name="아이디어 분석",
@@ -66,22 +66,37 @@ def build_placeholder_blueprint(payload: BlueprintRequest) -> BlueprintResponse:
                 priority="high",
             ),
             Feature(
-                name="설계도 생성",
-                description="분석 결과를 바탕으로 구현에 참고할 수 있는 구조화된 설계도를 생성합니다.",
+                name="기능 요구사항 정리",
+                description="MVP에서 먼저 구현할 기능과 이후 확장할 기능을 구분합니다.",
                 priority="high",
             ),
             Feature(
-                name="결과 시각화",
-                description="생성된 기능, API, DB 설계, 시퀀스 다이어그램을 화면에서 읽기 쉽게 보여줍니다.",
+                name="API 설계 생성",
+                description="FastAPI로 구현할 수 있는 REST API 초안을 생성합니다.",
+                priority="high",
+            ),
+            Feature(
+                name="데이터 모델 제안",
+                description="초기 저장이 필요하지 않아도 향후 확장 가능한 DB schema를 제안합니다.",
                 priority="medium",
+            ),
+            Feature(
+                name="시퀀스 다이어그램 생성",
+                description="주요 사용자 흐름을 Mermaid sequenceDiagram으로 표현합니다.",
+                priority="medium",
+            ),
+            Feature(
+                name="결과 다운로드",
+                description="생성된 설계도를 Markdown 문서로 내려받을 수 있게 합니다.",
+                priority="low",
             ),
         ],
         tech_stack=TechStack(
             backend=["Python", "FastAPI", "Pydantic"],
             frontend=["Streamlit"],
-            database=[],
+            database=["PostgreSQL"],
             ai=["OpenAI API"],
-            rationale="초기 MVP는 저장 기능 없이 단순한 요청/응답 흐름과 structured output 검증에 집중합니다.",
+            rationale="FastAPI와 Pydantic은 structured output 검증에 적합하고, Streamlit은 MVP 화면을 빠르게 검증하기 좋습니다. PostgreSQL은 생성 결과 저장과 이력 관리가 필요해질 때 자연스럽게 확장할 수 있습니다.",
         ),
         api_spec=[
             ApiSpec(
@@ -89,65 +104,115 @@ def build_placeholder_blueprint(payload: BlueprintRequest) -> BlueprintResponse:
                 path="/api/v1/blueprint/generate",
                 description="자연어 서비스 아이디어를 받아 시스템 설계도를 생성합니다.",
                 request=[
-                    ApiField(
-                        name="idea",
-                        type="string",
-                        description="사용자가 만들고 싶은 서비스 아이디어입니다.",
-                        required=True,
-                    )
+                    ApiField(name="idea", type="string", description="사용자가 만들고 싶은 서비스 아이디어입니다.", required=True)
                 ],
                 response=[
-                    ApiField(
-                        name="overview",
-                        type="string",
-                        description="생성된 시스템 설계도의 요약입니다.",
-                        required=True,
-                    ),
-                    ApiField(
-                        name="features",
-                        type="array",
-                        description="핵심 기능 목록입니다.",
-                        required=True,
-                    ),
+                    ApiField(name="overview", type="string", description="생성된 시스템 설계도의 요약입니다.", required=True),
+                    ApiField(name="features", type="array", description="핵심 기능 목록입니다.", required=True),
                 ],
-            )
+            ),
+            ApiSpec(
+                method="GET",
+                path="/api/v1/blueprint/examples",
+                description="사용자가 빠르게 테스트할 수 있는 샘플 아이디어 목록을 반환합니다.",
+                request=[],
+                response=[
+                    ApiField(name="examples", type="array", description="샘플 서비스 아이디어 목록입니다.", required=True)
+                ],
+            ),
+            ApiSpec(
+                method="GET",
+                path="/api/v1/blueprint/{blueprint_id}",
+                description="저장 기능을 추가했을 때 특정 설계도 결과를 조회합니다.",
+                request=[
+                    ApiField(name="blueprint_id", type="string", description="조회할 설계도 ID입니다.", required=True)
+                ],
+                response=[
+                    ApiField(name="blueprint", type="object", description="저장된 설계도 결과입니다.", required=True)
+                ],
+            ),
+            ApiSpec(
+                method="GET",
+                path="/api/v1/blueprints",
+                description="저장 기능을 추가했을 때 최근 생성된 설계도 목록을 조회합니다.",
+                request=[],
+                response=[
+                    ApiField(name="items", type="array", description="최근 생성된 설계도 목록입니다.", required=True)
+                ],
+            ),
         ],
         database_schema=[
             DatabaseTable(
-                name="future_blueprints",
-                description="생성된 설계도를 저장하는 기능을 추가할 때 사용할 수 있는 미래 확장용 테이블입니다.",
+                name="blueprints",
+                description="사용자가 생성한 설계도 결과를 저장하는 중심 테이블입니다.",
                 columns=[
-                    DatabaseColumn(
-                        name="id",
-                        type="uuid",
-                        description="설계도 고유 식별자입니다.",
-                        constraints=["primary_key"],
-                    ),
-                    DatabaseColumn(
-                        name="idea",
-                        type="text",
-                        description="사용자가 입력한 원본 서비스 아이디어입니다.",
-                        constraints=["not_null"],
-                    ),
-                    DatabaseColumn(
-                        name="result",
-                        type="jsonb",
-                        description="생성된 설계도 JSON 결과입니다.",
-                        constraints=["not_null"],
-                    ),
+                    DatabaseColumn(name="id", type="uuid", description="설계도 고유 식별자입니다.", constraints=["primary_key"]),
+                    DatabaseColumn(name="idea", type="text", description="사용자가 입력한 원본 서비스 아이디어입니다.", constraints=["not_null"]),
+                    DatabaseColumn(name="result", type="jsonb", description="생성된 설계도 JSON 결과입니다.", constraints=["not_null"]),
+                    DatabaseColumn(name="created_at", type="timestamp", description="설계도 생성 시각입니다.", constraints=["not_null"]),
                 ],
-            )
+            ),
+            DatabaseTable(
+                name="blueprint_features",
+                description="설계도에 포함된 핵심 기능을 검색하거나 비교하기 위해 분리 저장하는 테이블입니다.",
+                columns=[
+                    DatabaseColumn(name="id", type="uuid", description="기능 항목 고유 식별자입니다.", constraints=["primary_key"]),
+                    DatabaseColumn(name="blueprint_id", type="uuid", description="blueprints 테이블 참조 ID입니다.", constraints=["not_null", "foreign_key"]),
+                    DatabaseColumn(name="name", type="varchar", description="기능 이름입니다.", constraints=["not_null"]),
+                    DatabaseColumn(name="priority", type="varchar", description="기능 우선순위입니다.", constraints=["not_null"]),
+                ],
+            ),
+            DatabaseTable(
+                name="blueprint_api_specs",
+                description="생성된 API 설계 항목을 endpoint 단위로 저장하는 테이블입니다.",
+                columns=[
+                    DatabaseColumn(name="id", type="uuid", description="API 설계 항목 고유 식별자입니다.", constraints=["primary_key"]),
+                    DatabaseColumn(name="blueprint_id", type="uuid", description="blueprints 테이블 참조 ID입니다.", constraints=["not_null", "foreign_key"]),
+                    DatabaseColumn(name="method", type="varchar", description="HTTP method입니다.", constraints=["not_null"]),
+                    DatabaseColumn(name="path", type="varchar", description="API endpoint path입니다.", constraints=["not_null"]),
+                ],
+            ),
         ],
+        database_erd=(
+            "erDiagram\n"
+            "  blueprints ||--o{ blueprint_features : contains\n"
+            "  blueprints ||--o{ blueprint_api_specs : contains\n"
+            "  blueprints {\n"
+            "    uuid id PK\n"
+            "    text idea\n"
+            "    jsonb result\n"
+            "    timestamp created_at\n"
+            "  }\n"
+            "  blueprint_features {\n"
+            "    uuid id PK\n"
+            "    uuid blueprint_id FK\n"
+            "    varchar name\n"
+            "    varchar priority\n"
+            "  }\n"
+            "  blueprint_api_specs {\n"
+            "    uuid id PK\n"
+            "    uuid blueprint_id FK\n"
+            "    varchar method\n"
+            "    varchar path\n"
+            "  }\n"
+        ),
         sequence_diagram=(
             "sequenceDiagram\n"
             "  participant User as 사용자\n"
             "  participant UI as Streamlit 화면\n"
             "  participant API as FastAPI 서버\n"
+            "  participant Cache as In-memory Cache\n"
             "  participant LLM as OpenAI API\n"
             "  User->>UI: 서비스 아이디어 입력\n"
             "  UI->>API: POST /api/v1/blueprint/generate\n"
-            "  API->>LLM: 구조화된 설계도 요청\n"
-            "  LLM-->>API: JSON 설계도 반환\n"
+            "  API->>Cache: 같은 idea 결과 확인\n"
+            "  alt cached result exists\n"
+            "    Cache-->>API: 캐시된 설계도 반환\n"
+            "  else cache miss\n"
+            "    API->>LLM: 구조화된 설계도 요청\n"
+            "    LLM-->>API: JSON 설계도 반환\n"
+            "    API->>Cache: 결과 저장\n"
+            "  end\n"
             "  API-->>UI: 설계도 응답 반환\n"
             "  UI-->>User: 결과 화면 표시\n"
         ),
