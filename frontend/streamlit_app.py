@@ -186,6 +186,26 @@ def show_api_error(response: requests.Response) -> None:
     st.code(json.dumps(error_body, ensure_ascii=False, indent=2), language="json")
 
 
+def request_blueprint(idea: str) -> dict | None:
+    """설계도 생성 API를 호출하고 성공 시 결과 JSON을 반환합니다."""
+    try:
+        with st.spinner("설계도를 생성하고 있어요. 잠시만 기다려 주세요."):
+            response = requests.post(
+                f"{API_BASE_URL}/api/v1/blueprint/generate",
+                json={"idea": idea},
+                timeout=120,
+            )
+    except requests.RequestException as exc:
+        show_request_error(exc)
+        return None
+
+    if not response.ok:
+        show_api_error(response)
+        return None
+
+    return response.json()
+
+
 def render_blueprint(blueprint: dict) -> None:
     """생성된 설계도 결과를 화면에 렌더링합니다."""
     st.subheader("개요")
@@ -264,21 +284,9 @@ if st.button("설계도 생성", type="primary"):
     if not idea.strip():
         st.warning("서비스 아이디어를 입력해 주세요.")
     else:
-        try:
-            # 버튼을 누르면 FastAPI 백엔드에 아이디어를 전달하고 구조화된 설계도 응답을 받습니다.
-            with st.spinner("설계도를 생성하는 중입니다..."):
-                response = requests.post(
-                    f"{API_BASE_URL}/api/v1/blueprint/generate",
-                    json={"idea": idea},
-                    timeout=120,
-                )
-        except requests.RequestException as exc:
-            show_request_error(exc)
-        else:
-            if response.ok:
-                st.session_state.blueprint = response.json()
-            else:
-                show_api_error(response)
+        blueprint = request_blueprint(idea)
+        if blueprint:
+            st.session_state.blueprint = blueprint
 
 if st.session_state.blueprint:
     render_blueprint(st.session_state.blueprint)

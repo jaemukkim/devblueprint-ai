@@ -11,10 +11,12 @@ from app.schemas.blueprint import (
     Feature,
     TechStack,
 )
-from app.services.blueprint_validator import validate_blueprint_quality
-from app.services.llm_client import request_blueprint_from_openai
+from app.services.blueprint_validator import collect_blueprint_quality_errors, validate_blueprint_quality
+from app.services.llm_client import BlueprintGenerationError, request_blueprint_from_openai
 from app.services.prompts import build_blueprint_prompt
 
+
+MAX_OPENAI_GENERATION_ATTEMPTS = 3
 
 # 같은 idea를 반복 생성할 때 OpenAI 토큰을 다시 쓰지 않기 위한 간단한 in-memory cache입니다.
 # 서버를 재시작하면 비워지므로, 장기 저장이 필요해지면 DB나 파일 캐시로 교체하면 됩니다.
@@ -35,11 +37,30 @@ def generate_blueprint(payload: BlueprintRequest) -> BlueprintResponse:
         blueprint = build_placeholder_blueprint(payload)
     else:
         user_prompt = build_blueprint_prompt(payload)
-        blueprint = request_blueprint_from_openai(user_prompt)
+        blueprint = generate_blueprint_with_retry(user_prompt)
 
     validate_blueprint_quality(blueprint)
     _BLUEPRINT_CACHE[cache_key] = deepcopy(blueprint)
     return blueprint
+
+
+def generate_blueprint_with_retry(user_prompt: str) -> BlueprintResponse:
+    """품질 검증에 실패한 OpenAI 결과를 feedback과 함께 재생성합니다."""
+    validation_feedback: list[str] | None = None
+    last_errors: list[str] = []
+
+    for _ in range(MAX_OPENAI_GENERATION_ATTEMPTS):
+        blueprint = request_blueprint_from_openai(user_prompt, validation_feedback)
+        errors = collect_blueprint_quality_errors(blueprint)
+
+        if not errors:
+            return blueprint
+
+        last_errors = errors
+        validation_feedback = errors
+
+    joined_errors = "; ".join(last_errors)
+    raise BlueprintGenerationError(f"설계도 품질 검증 재시도에 실패했습니다: {joined_errors}")
 
 
 def normalize_idea(idea: str) -> str:
