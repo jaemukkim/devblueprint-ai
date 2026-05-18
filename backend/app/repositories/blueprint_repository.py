@@ -1,6 +1,8 @@
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from copy import deepcopy
+from dataclasses import dataclass
+from datetime import datetime, timezone
 from uuid import uuid4
 
 from sqlalchemy import delete, func, select
@@ -10,6 +12,16 @@ from app.core.config import settings
 from app.db.session import SessionLocal
 from app.models.blueprint import BlueprintModel
 from app.schemas.blueprint import BlueprintResponse
+
+
+@dataclass
+class StoredBlueprint:
+    """저장된 설계도 결과와 조회용 메타데이터를 함께 담는 내부 모델입니다."""
+
+    id: str
+    idea: str
+    result: BlueprintResponse
+    created_at: datetime
 
 
 class BlueprintRepository(ABC):
@@ -24,6 +36,14 @@ class BlueprintRepository(ABC):
         """cache key와 설계도 결과를 저장합니다."""
 
     @abstractmethod
+    def get_by_id(self, blueprint_id: str) -> StoredBlueprint | None:
+        """저장된 설계도 ID로 상세 결과를 조회합니다."""
+
+    @abstractmethod
+    def list_recent(self, limit: int = 20) -> list[StoredBlueprint]:
+        """최근 생성된 설계도 목록을 최신순으로 조회합니다."""
+
+    @abstractmethod
     def clear(self) -> None:
         """테스트나 개발 중 캐시를 비울 때 사용합니다."""
 
@@ -36,16 +56,42 @@ class InMemoryBlueprintRepository(BlueprintRepository):
     """PostgreSQL 도입 전까지 사용할 서버 메모리 기반 저장소입니다."""
 
     def __init__(self) -> None:
-        self._items: dict[str, BlueprintResponse] = {}
+        self._items: dict[str, StoredBlueprint] = {}
 
     def get(self, key: str) -> BlueprintResponse | None:
-        blueprint = self._items.get(key)
-        if blueprint is None:
+        stored_blueprint = self._items.get(key)
+        if stored_blueprint is None:
             return None
-        return deepcopy(blueprint)
+        return deepcopy(stored_blueprint.result)
 
     def save(self, key: str, blueprint: BlueprintResponse, idea: str | None = None) -> None:
-        self._items[key] = deepcopy(blueprint)
+        stored_blueprint = self._items.get(key)
+
+        if stored_blueprint is None:
+            self._items[key] = StoredBlueprint(
+                id=str(uuid4()),
+                idea=idea or key,
+                result=deepcopy(blueprint),
+                created_at=datetime.now(timezone.utc),
+            )
+            return
+
+        stored_blueprint.idea = idea or stored_blueprint.idea
+        stored_blueprint.result = deepcopy(blueprint)
+
+    def get_by_id(self, blueprint_id: str) -> StoredBlueprint | None:
+        for stored_blueprint in self._items.values():
+            if stored_blueprint.id == blueprint_id:
+                return deepcopy(stored_blueprint)
+        return None
+
+    def list_recent(self, limit: int = 20) -> list[StoredBlueprint]:
+        stored_blueprints = sorted(
+            self._items.values(),
+            key=lambda stored_blueprint: stored_blueprint.created_at,
+            reverse=True,
+        )
+        return deepcopy(stored_blueprints[:limit])
 
     def clear(self) -> None:
         self._items.clear()
@@ -68,6 +114,23 @@ class PostgresBlueprintRepository(BlueprintRepository):
                 return None
 
             return BlueprintResponse.model_validate(blueprint_model.result)
+
+    def get_by_id(self, blueprint_id: str) -> StoredBlueprint | None:
+        with self._session_factory() as db:
+            blueprint_model = db.get(BlueprintModel, blueprint_id)
+
+            if blueprint_model is None:
+                return None
+
+            return self._to_stored_blueprint(blueprint_model)
+
+    def list_recent(self, limit: int = 20) -> list[StoredBlueprint]:
+        with self._session_factory() as db:
+            blueprint_models = db.scalars(
+                select(BlueprintModel).order_by(BlueprintModel.created_at.desc()).limit(limit)
+            ).all()
+
+            return [self._to_stored_blueprint(blueprint_model) for blueprint_model in blueprint_models]
 
     def save(self, key: str, blueprint: BlueprintResponse, idea: str | None = None) -> None:
         with self._session_factory() as db:
@@ -96,6 +159,15 @@ class PostgresBlueprintRepository(BlueprintRepository):
     def count(self) -> int:
         with self._session_factory() as db:
             return db.scalar(select(func.count()).select_from(BlueprintModel)) or 0
+
+    def _to_stored_blueprint(self, blueprint_model: BlueprintModel) -> StoredBlueprint:
+        """ORM 모델을 API 응답 생성에 쓰기 쉬운 내부 모델로 변환합니다."""
+        return StoredBlueprint(
+            id=blueprint_model.id,
+            idea=blueprint_model.idea,
+            result=BlueprintResponse.model_validate(blueprint_model.result),
+            created_at=blueprint_model.created_at,
+        )
 
 
 def create_blueprint_repository() -> BlueprintRepository:

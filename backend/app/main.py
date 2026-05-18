@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.v1.blueprint import router as blueprint_router
+from app.api.v1.blueprint import blueprints_router, router as blueprint_router
 from app.core.config import settings
 
 
@@ -26,6 +26,7 @@ app.add_middleware(
 # API 버전 관리를 위해 모든 v1 라우터는 /api/v1 아래에 묶습니다.
 # 이후 v2가 필요해지면 기존 엔드포인트를 유지하면서 새 버전을 추가할 수 있습니다.
 app.include_router(blueprint_router, prefix="/api/v1")
+app.include_router(blueprints_router, prefix="/api/v1")
 
 
 @app.get("/health")

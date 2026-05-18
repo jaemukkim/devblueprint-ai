@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
@@ -73,6 +74,26 @@ class BlueprintResponse(BaseModel):
     database_schema: list[DatabaseTable]
     database_erd: str
     sequence_diagram: str
+
+
+# 저장된 설계도 목록에서 보여줄 최소 정보입니다.
+# 전체 result를 목록에 모두 싣지 않아 응답 크기를 작게 유지합니다.
+class BlueprintSummary(BaseModel):
+    id: str
+    idea: str
+    created_at: datetime
+
+
+# 저장된 설계도 상세 조회 응답입니다.
+# 목록 정보와 함께 실제 생성 결과 전체를 result에 담습니다.
+class StoredBlueprintResponse(BlueprintSummary):
+    result: BlueprintResponse
+
+
+# 저장된 설계도 목록 조회 응답입니다.
+# 이후 pagination 정보를 추가하기 쉽도록 배열을 바로 반환하지 않고 items로 감쌉니다.
+class BlueprintListResponse(BaseModel):
+    items: list[BlueprintSummary]
 
 
 # API 에러 응답을 문서화하기 위한 모델입니다.
