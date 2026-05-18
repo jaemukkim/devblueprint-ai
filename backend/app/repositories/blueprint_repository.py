@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from copy import deepcopy
 
+from app.core.config import settings
 from app.schemas.blueprint import BlueprintResponse
 
 
@@ -46,4 +47,17 @@ class InMemoryBlueprintRepository(BlueprintRepository):
         return len(self._items)
 
 
-blueprint_repository: BlueprintRepository = InMemoryBlueprintRepository()
+def create_blueprint_repository() -> BlueprintRepository:
+    """환경 설정에 맞는 설계도 저장소 구현체를 생성합니다."""
+    repository_backend = settings.repository_backend.lower()
+
+    if repository_backend == "memory":
+        return InMemoryBlueprintRepository()
+
+    if repository_backend == "postgres":
+        raise NotImplementedError("PostgresBlueprintRepository는 다음 단계에서 구현합니다.")
+
+    raise ValueError(f"지원하지 않는 repository backend입니다: {settings.repository_backend}")
+
+
+blueprint_repository: BlueprintRepository = create_blueprint_repository()
