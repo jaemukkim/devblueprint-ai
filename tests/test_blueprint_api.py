@@ -119,3 +119,29 @@ def test_get_blueprint_returns_404_when_missing() -> None:
     response = client.get("/api/v1/blueprints/missing-blueprint-id")
 
     assert response.status_code == 404
+
+
+def test_delete_blueprint_removes_saved_blueprint(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "use_openai", False)
+    blueprint_repository.clear()
+
+    create_response = client.post(
+        "/api/v1/blueprint/generate",
+        json={"idea": "삭제 테스트용 설계도 서비스"},
+    )
+    blueprint_id = client.get("/api/v1/blueprints").json()["items"][0]["id"]
+    delete_response = client.delete(f"/api/v1/blueprints/{blueprint_id}")
+    detail_response = client.get(f"/api/v1/blueprints/{blueprint_id}")
+
+    assert create_response.status_code == 200
+    assert delete_response.status_code == 204
+    assert detail_response.status_code == 404
+    assert blueprint_repository.count() == 0
+
+
+def test_delete_blueprint_returns_404_when_missing() -> None:
+    blueprint_repository.clear()
+
+    response = client.delete("/api/v1/blueprints/missing-blueprint-id")
+
+    assert response.status_code == 404

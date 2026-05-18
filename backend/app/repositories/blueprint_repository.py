@@ -44,6 +44,10 @@ class BlueprintRepository(ABC):
         """최근 생성된 설계도 목록을 최신순으로 조회합니다."""
 
     @abstractmethod
+    def delete_by_id(self, blueprint_id: str) -> bool:
+        """저장된 설계도 ID로 결과를 삭제하고 성공 여부를 반환합니다."""
+
+    @abstractmethod
     def clear(self) -> None:
         """테스트나 개발 중 캐시를 비울 때 사용합니다."""
 
@@ -93,6 +97,14 @@ class InMemoryBlueprintRepository(BlueprintRepository):
         )
         return deepcopy(stored_blueprints[:limit])
 
+    def delete_by_id(self, blueprint_id: str) -> bool:
+        for key, stored_blueprint in list(self._items.items()):
+            if stored_blueprint.id == blueprint_id:
+                del self._items[key]
+                return True
+
+        return False
+
     def clear(self) -> None:
         self._items.clear()
 
@@ -134,6 +146,20 @@ class PostgresBlueprintRepository(BlueprintRepository):
             ).all()
 
             return [self._to_stored_blueprint(blueprint_model) for blueprint_model in blueprint_models]
+
+    def delete_by_id(self, blueprint_id: str) -> bool:
+        if not is_valid_uuid(blueprint_id):
+            return False
+
+        with self._session_factory() as db:
+            blueprint_model = db.get(BlueprintModel, blueprint_id)
+
+            if blueprint_model is None:
+                return False
+
+            db.delete(blueprint_model)
+            db.commit()
+            return True
 
     def save(self, key: str, blueprint: BlueprintResponse, idea: str | None = None) -> None:
         with self._session_factory() as db:

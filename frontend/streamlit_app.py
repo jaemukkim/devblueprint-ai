@@ -241,6 +241,21 @@ def request_stored_blueprint(blueprint_id: str) -> dict | None:
     return response.json()["result"]
 
 
+def delete_stored_blueprint(blueprint_id: str) -> bool:
+    """저장된 설계도 삭제 API를 호출합니다."""
+    try:
+        response = requests.delete(f"{API_BASE_URL}/api/v1/blueprints/{blueprint_id}", timeout=20)
+    except requests.RequestException as exc:
+        show_request_error(exc)
+        return False
+
+    if response.status_code == 204:
+        return True
+
+    show_api_error(response)
+    return False
+
+
 def render_recent_blueprints() -> None:
     """사이드바에 최근 저장된 설계도 목록을 표시합니다."""
     st.sidebar.header("최근 설계도")
@@ -256,11 +271,24 @@ def render_recent_blueprints() -> None:
     for item in recent_blueprints:
         idea = item["idea"]
         label = idea if len(idea) <= 24 else f"{idea[:24]}..."
-        if st.sidebar.button(label, key=f"recent-{item['id']}", use_container_width=True):
+        open_col, delete_col = st.sidebar.columns([4, 1])
+
+        if open_col.button(label, key=f"recent-{item['id']}", use_container_width=True):
             blueprint = request_stored_blueprint(item["id"])
             if blueprint:
                 st.session_state.blueprint = blueprint
+                st.session_state.current_blueprint_id = item["id"]
                 st.session_state.idea = idea
+
+        if delete_col.button("삭제", key=f"delete-{item['id']}", use_container_width=True):
+            if delete_stored_blueprint(item["id"]):
+                st.session_state.recent_blueprints = request_recent_blueprints()
+
+                if st.session_state.current_blueprint_id == item["id"]:
+                    st.session_state.blueprint = None
+                    st.session_state.current_blueprint_id = None
+
+                st.rerun()
 
 
 def render_blueprint(blueprint: dict) -> None:
@@ -321,6 +349,8 @@ if "idea" not in st.session_state:
     st.session_state.idea = ""
 if "blueprint" not in st.session_state:
     st.session_state.blueprint = None
+if "current_blueprint_id" not in st.session_state:
+    st.session_state.current_blueprint_id = None
 if "recent_blueprints" not in st.session_state:
     st.session_state.recent_blueprints = request_recent_blueprints()
 
@@ -348,6 +378,7 @@ if st.button("설계도 생성", type="primary"):
         blueprint = request_blueprint(idea)
         if blueprint:
             st.session_state.blueprint = blueprint
+            st.session_state.current_blueprint_id = None
             st.session_state.recent_blueprints = request_recent_blueprints()
             st.rerun()
 

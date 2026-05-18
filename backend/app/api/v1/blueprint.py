@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Response, status
 
 from app.repositories.blueprint_repository import StoredBlueprint, blueprint_repository
 from app.schemas.blueprint import (
@@ -46,6 +46,16 @@ def get_blueprint(blueprint_id: str) -> StoredBlueprintResponse:
         created_at=stored_blueprint.created_at,
         result=stored_blueprint.result,
     )
+
+
+@blueprints_router.delete("/{blueprint_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_blueprint(blueprint_id: str) -> Response:
+    deleted = blueprint_repository.delete_by_id(blueprint_id)
+
+    if not deleted:
+        raise HTTPException(status_code=404, detail="삭제할 설계도를 찾을 수 없습니다.")
+
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 def to_blueprint_summary(stored_blueprint: StoredBlueprint) -> BlueprintSummary:
