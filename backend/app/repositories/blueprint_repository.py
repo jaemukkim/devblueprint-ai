@@ -3,7 +3,7 @@ from collections.abc import Callable
 from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
@@ -116,6 +116,9 @@ class PostgresBlueprintRepository(BlueprintRepository):
             return BlueprintResponse.model_validate(blueprint_model.result)
 
     def get_by_id(self, blueprint_id: str) -> StoredBlueprint | None:
+        if not is_valid_uuid(blueprint_id):
+            return None
+
         with self._session_factory() as db:
             blueprint_model = db.get(BlueprintModel, blueprint_id)
 
@@ -181,6 +184,16 @@ def create_blueprint_repository() -> BlueprintRepository:
         return PostgresBlueprintRepository()
 
     raise ValueError(f"지원하지 않는 repository backend입니다: {settings.repository_backend}")
+
+
+def is_valid_uuid(value: str) -> bool:
+    """문자열이 PostgreSQL UUID 컬럼에 안전하게 전달될 수 있는지 확인합니다."""
+    try:
+        UUID(value)
+    except ValueError:
+        return False
+
+    return True
 
 
 blueprint_repository: BlueprintRepository = create_blueprint_repository()

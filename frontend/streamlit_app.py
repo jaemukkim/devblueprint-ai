@@ -4,11 +4,15 @@ import os
 import requests
 import streamlit as st
 import streamlit.components.v1 as components
+from dotenv import load_dotenv
 
+
+# 로컬 개발에서는 .env의 API_BASE_URL 값을 먼저 읽어 FastAPI 주소를 맞춥니다.
+load_dotenv()
 
 # Streamlit 앱이 호출할 백엔드 API 주소입니다.
 # 배포 환경에서는 API_BASE_URL 환경변수만 바꾸면 같은 화면 코드를 그대로 사용할 수 있습니다.
-API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
+API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8001")
 
 SAMPLE_IDEAS = [
     "챗봇을 이용한 쇼핑몰 고객상담 자동화 서비스",
