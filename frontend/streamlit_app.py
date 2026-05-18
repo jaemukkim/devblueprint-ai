@@ -1,5 +1,6 @@
 import json
 import os
+import re
 
 import requests
 import streamlit as st
@@ -12,7 +13,7 @@ load_dotenv()
 
 # Streamlit 앱이 호출할 백엔드 API 주소입니다.
 # 배포 환경에서는 API_BASE_URL 환경변수만 바꾸면 같은 화면 코드를 그대로 사용할 수 있습니다.
-API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8001")
+API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
 
 SAMPLE_IDEAS = [
     "챗봇을 이용한 쇼핑몰 고객상담 자동화 서비스",
@@ -159,6 +160,18 @@ def blueprint_to_markdown(blueprint: dict) -> str:
     )
 
     return "\n".join(lines)
+
+
+def build_markdown_file_name(idea: str) -> str:
+    """사용자 아이디어를 파일 시스템에서 안전한 Markdown 파일명으로 변환합니다."""
+    normalized_idea = " ".join(idea.strip().split())
+    safe_name = re.sub(r'[\\/:*?"<>|]+', "", normalized_idea)
+    safe_name = safe_name.strip(" .")
+
+    if not safe_name:
+        safe_name = "devblueprint-result"
+
+    return f"{safe_name[:80]}.md"
 
 
 def show_request_error(exc: requests.RequestException) -> None:
@@ -334,7 +347,7 @@ def render_blueprint(blueprint: dict) -> None:
     st.download_button(
         "Markdown 다운로드",
         data=blueprint_to_markdown(blueprint),
-        file_name="devblueprint-result.md",
+        file_name=build_markdown_file_name(st.session_state.idea),
         mime="text/markdown",
     )
 
