@@ -188,8 +188,8 @@ PostgreSQL 사용 시 같은 idea 요청은 `cache_key`로 먼저 조회하고, 
 
 ## 예시 결과
 
-- [야구 분석 및 승부 예측 서비스](docs/examples/baseball_prediction_blueprint.md)
 - [호텔 예약 서비스](docs/examples/hotel_reservation_blueprint.md)
+- [풋살장 예약 서비스](docs/examples/futsal_reservation_blueprint.md)
 
 ## 다음 계획
 
