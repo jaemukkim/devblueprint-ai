@@ -35,7 +35,7 @@ def generate_blueprint(payload: BlueprintRequest) -> BlueprintResponse:
         blueprint = generate_blueprint_with_retry(user_prompt)
 
     validate_blueprint_quality(blueprint)
-    blueprint_repository.save(cache_key, blueprint)
+    blueprint_repository.save(cache_key, blueprint, idea=payload.idea.strip())
     return blueprint
 
 

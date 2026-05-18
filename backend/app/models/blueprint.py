@@ -6,11 +6,12 @@ from app.models.base import Base
 
 
 class BlueprintModel(Base):
-    """생성된 설계도 결과를 저장하기 위한 초기 ORM 모델입니다."""
+    """생성된 설계도 결과를 저장하기 위한 ORM 모델입니다."""
 
     __tablename__ = "blueprints"
 
     id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True)
+    cache_key: Mapped[str] = mapped_column(Text, nullable=False, unique=True, index=True)
     idea: Mapped[str] = mapped_column(Text, nullable=False)
     result: Mapped[dict] = mapped_column(JSONB, nullable=False)
     created_at: Mapped[DateTime] = mapped_column(

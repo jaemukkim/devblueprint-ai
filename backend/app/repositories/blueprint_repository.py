@@ -1,7 +1,14 @@
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from copy import deepcopy
+from uuid import uuid4
+
+from sqlalchemy import delete, func, select
+from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.db.session import SessionLocal
+from app.models.blueprint import BlueprintModel
 from app.schemas.blueprint import BlueprintResponse
 
 
@@ -13,7 +20,7 @@ class BlueprintRepository(ABC):
         """cache key에 해당하는 설계도 결과를 조회합니다."""
 
     @abstractmethod
-    def save(self, key: str, blueprint: BlueprintResponse) -> None:
+    def save(self, key: str, blueprint: BlueprintResponse, idea: str | None = None) -> None:
         """cache key와 설계도 결과를 저장합니다."""
 
     @abstractmethod
@@ -37,7 +44,7 @@ class InMemoryBlueprintRepository(BlueprintRepository):
             return None
         return deepcopy(blueprint)
 
-    def save(self, key: str, blueprint: BlueprintResponse) -> None:
+    def save(self, key: str, blueprint: BlueprintResponse, idea: str | None = None) -> None:
         self._items[key] = deepcopy(blueprint)
 
     def clear(self) -> None:
@@ -45,6 +52,50 @@ class InMemoryBlueprintRepository(BlueprintRepository):
 
     def count(self) -> int:
         return len(self._items)
+
+
+class PostgresBlueprintRepository(BlueprintRepository):
+    """PostgreSQL에 설계도 결과를 저장하고 cache key로 재사용하는 저장소입니다."""
+
+    def __init__(self, session_factory: Callable[[], Session] = SessionLocal) -> None:
+        self._session_factory = session_factory
+
+    def get(self, key: str) -> BlueprintResponse | None:
+        with self._session_factory() as db:
+            blueprint_model = db.scalar(select(BlueprintModel).where(BlueprintModel.cache_key == key))
+
+            if blueprint_model is None:
+                return None
+
+            return BlueprintResponse.model_validate(blueprint_model.result)
+
+    def save(self, key: str, blueprint: BlueprintResponse, idea: str | None = None) -> None:
+        with self._session_factory() as db:
+            blueprint_model = db.scalar(select(BlueprintModel).where(BlueprintModel.cache_key == key))
+            result = blueprint.model_dump(mode="json")
+
+            if blueprint_model is None:
+                blueprint_model = BlueprintModel(
+                    id=str(uuid4()),
+                    cache_key=key,
+                    idea=idea or key,
+                    result=result,
+                )
+                db.add(blueprint_model)
+            else:
+                blueprint_model.idea = idea or blueprint_model.idea
+                blueprint_model.result = result
+
+            db.commit()
+
+    def clear(self) -> None:
+        with self._session_factory() as db:
+            db.execute(delete(BlueprintModel))
+            db.commit()
+
+    def count(self) -> int:
+        with self._session_factory() as db:
+            return db.scalar(select(func.count()).select_from(BlueprintModel)) or 0
 
 
 def create_blueprint_repository() -> BlueprintRepository:
@@ -55,7 +106,7 @@ def create_blueprint_repository() -> BlueprintRepository:
         return InMemoryBlueprintRepository()
 
     if repository_backend == "postgres":
-        raise NotImplementedError("PostgresBlueprintRepository는 다음 단계에서 구현합니다.")
+        return PostgresBlueprintRepository()
 
     raise ValueError(f"지원하지 않는 repository backend입니다: {settings.repository_backend}")
 
