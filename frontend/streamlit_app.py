@@ -11,7 +11,7 @@ import streamlit.components.v1 as components
 API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
 
 SAMPLE_IDEAS = [
-    "스포츠 야구 분석 및 승부 예측 서비스",
+    "챗봇을 이용한 쇼핑몰 고객상담 자동화 서비스",
     "개발자를 위한 AI 기반 API 설계 자동화 도구",
     "소상공인을 위한 예약 관리 및 고객 알림 서비스",
 ]
@@ -206,6 +206,59 @@ def request_blueprint(idea: str) -> dict | None:
     return response.json()
 
 
+def request_recent_blueprints() -> list[dict]:
+    """최근 저장된 설계도 목록 API를 호출합니다."""
+    try:
+        response = requests.get(f"{API_BASE_URL}/api/v1/blueprints", timeout=10)
+    except requests.RequestException as exc:
+        st.sidebar.caption("최근 설계도 목록을 불러오지 못했습니다.")
+        st.sidebar.caption(str(exc))
+        return []
+
+    if not response.ok:
+        st.sidebar.caption(f"최근 설계도 목록 요청 실패: {response.status_code}")
+        return []
+
+    return response.json().get("items", [])
+
+
+def request_stored_blueprint(blueprint_id: str) -> dict | None:
+    """저장된 설계도 상세 API를 호출하고 result만 반환합니다."""
+    try:
+        response = requests.get(f"{API_BASE_URL}/api/v1/blueprints/{blueprint_id}", timeout=20)
+    except requests.RequestException as exc:
+        show_request_error(exc)
+        return None
+
+    if not response.ok:
+        show_api_error(response)
+        return None
+
+    return response.json()["result"]
+
+
+def render_recent_blueprints() -> None:
+    """사이드바에 최근 저장된 설계도 목록을 표시합니다."""
+    st.sidebar.header("최근 설계도")
+
+    if st.sidebar.button("새로고침", use_container_width=True):
+        st.session_state.recent_blueprints = request_recent_blueprints()
+
+    recent_blueprints = st.session_state.recent_blueprints
+    if not recent_blueprints:
+        st.sidebar.caption("저장된 설계도가 아직 없습니다.")
+        return
+
+    for item in recent_blueprints:
+        idea = item["idea"]
+        label = idea if len(idea) <= 24 else f"{idea[:24]}..."
+        if st.sidebar.button(label, key=f"recent-{item['id']}", use_container_width=True):
+            blueprint = request_stored_blueprint(item["id"])
+            if blueprint:
+                st.session_state.blueprint = blueprint
+                st.session_state.idea = idea
+
+
 def render_blueprint(blueprint: dict) -> None:
     """생성된 설계도 결과를 화면에 렌더링합니다."""
     st.subheader("개요")
@@ -264,6 +317,10 @@ if "idea" not in st.session_state:
     st.session_state.idea = ""
 if "blueprint" not in st.session_state:
     st.session_state.blueprint = None
+if "recent_blueprints" not in st.session_state:
+    st.session_state.recent_blueprints = request_recent_blueprints()
+
+render_recent_blueprints()
 
 sample_cols = st.columns(len(SAMPLE_IDEAS))
 for index, sample_idea in enumerate(SAMPLE_IDEAS):
@@ -287,6 +344,8 @@ if st.button("설계도 생성", type="primary"):
         blueprint = request_blueprint(idea)
         if blueprint:
             st.session_state.blueprint = blueprint
+            st.session_state.recent_blueprints = request_recent_blueprints()
+            st.rerun()
 
 if st.session_state.blueprint:
     render_blueprint(st.session_state.blueprint)

@@ -71,3 +71,51 @@ def test_generate_blueprint_reuses_cached_result(monkeypatch) -> None:
     assert second_response.status_code == 200
     assert blueprint_repository.count() == 1
     assert first_response.json() == second_response.json()
+
+
+def test_list_blueprints_returns_saved_blueprint_summary(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "use_openai", False)
+    blueprint_repository.clear()
+
+    create_response = client.post(
+        "/api/v1/blueprint/generate",
+        json={"idea": "개인 학습 기록을 분석하는 AI 플래너"},
+    )
+    list_response = client.get("/api/v1/blueprints")
+
+    assert create_response.status_code == 200
+    assert list_response.status_code == 200
+
+    items = list_response.json()["items"]
+    assert len(items) == 1
+    assert items[0]["id"]
+    assert items[0]["idea"] == "개인 학습 기록을 분석하는 AI 플래너"
+    assert items[0]["created_at"]
+
+
+def test_get_blueprint_returns_saved_blueprint_detail(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "use_openai", False)
+    blueprint_repository.clear()
+
+    create_response = client.post(
+        "/api/v1/blueprint/generate",
+        json={"idea": "운동 루틴을 추천하는 AI 코치 서비스"},
+    )
+    blueprint_id = client.get("/api/v1/blueprints").json()["items"][0]["id"]
+    detail_response = client.get(f"/api/v1/blueprints/{blueprint_id}")
+
+    assert create_response.status_code == 200
+    assert detail_response.status_code == 200
+
+    data = detail_response.json()
+    assert data["id"] == blueprint_id
+    assert data["idea"] == "운동 루틴을 추천하는 AI 코치 서비스"
+    assert data["result"] == create_response.json()
+
+
+def test_get_blueprint_returns_404_when_missing() -> None:
+    blueprint_repository.clear()
+
+    response = client.get("/api/v1/blueprints/missing-blueprint-id")
+
+    assert response.status_code == 404
