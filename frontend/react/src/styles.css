@@ -1,6 +1,6 @@
 :root {
   color: #17202a;
-  background: #f6f7f9;
+  background: #f4f6f8;
   font-family:
     Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-synthesis: none;
@@ -31,14 +31,18 @@ button:disabled {
 
 .app-shell {
   display: grid;
-  grid-template-columns: 320px minmax(0, 1fr);
+  grid-template-columns: 340px minmax(0, 1fr);
   min-height: 100vh;
 }
 
 .sidebar {
   border-right: 1px solid #d9dee5;
   background: #ffffff;
-  padding: 24px 18px;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+  padding: 22px 16px;
 }
 
 .sidebar-header,
@@ -67,13 +71,13 @@ p {
 
 h1 {
   margin: 0;
-  font-size: 24px;
+  font-size: 23px;
   line-height: 1.25;
 }
 
 h2 {
   margin: 0 0 14px;
-  font-size: 19px;
+  font-size: 18px;
 }
 
 h3 {
@@ -82,23 +86,26 @@ h3 {
 }
 
 .workspace {
-  padding: 28px;
+  max-width: 1480px;
+  width: 100%;
+  padding: 26px 32px 48px;
 }
 
 .topbar {
-  margin-bottom: 22px;
+  margin-bottom: 18px;
 }
 
 .input-panel,
 .section,
-.empty-state {
+.empty-state,
+.result-summary {
   border: 1px solid #d9dee5;
   border-radius: 8px;
   background: #ffffff;
 }
 
 .input-panel {
-  padding: 18px;
+  padding: 16px;
 }
 
 .sample-row {
@@ -135,7 +142,7 @@ label {
 
 textarea {
   width: 100%;
-  min-height: 128px;
+  min-height: 112px;
   resize: vertical;
   border: 1px solid #cbd3dd;
   border-radius: 6px;
@@ -153,7 +160,7 @@ textarea {
 }
 
 .primary-button {
-  margin-top: 14px;
+  margin-top: 12px;
   border-color: #1f6feb;
   background: #1f6feb;
   color: #ffffff;
@@ -180,7 +187,7 @@ textarea {
 .recent-list {
   display: grid;
   gap: 8px;
-  margin-top: 18px;
+  margin-top: 16px;
 }
 
 .recent-row {
@@ -190,8 +197,8 @@ textarea {
 }
 
 .recent-item {
-  min-height: 58px;
-  padding: 9px 10px;
+  min-height: 64px;
+  padding: 10px;
   text-align: left;
 }
 
@@ -229,8 +236,8 @@ textarea {
 .empty-state {
   display: grid;
   place-items: center;
-  min-height: 220px;
-  margin-top: 18px;
+  min-height: 260px;
+  margin-top: 16px;
   padding: 32px;
   color: #607084;
   text-align: center;
@@ -238,19 +245,81 @@ textarea {
 
 .result-layout {
   display: grid;
-  gap: 16px;
-  margin-top: 18px;
+  gap: 14px;
+  margin-top: 16px;
 }
 
 .section {
+  padding: 16px;
+}
+
+.result-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 18px;
+  align-items: center;
   padding: 18px;
+}
+
+.result-summary h2 {
+  margin-bottom: 8px;
+}
+
+.result-summary p:last-child {
+  margin-bottom: 0;
+}
+
+.summary-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, 92px);
+  gap: 8px;
+}
+
+.metric {
+  display: grid;
+  gap: 3px;
+  justify-items: center;
+  border: 1px solid #d9dee5;
+  border-radius: 8px;
+  padding: 10px 8px;
+  background: #fbfcfd;
+  color: #607084;
+}
+
+.metric strong {
+  color: #17202a;
+  font-size: 20px;
+}
+
+.metric span {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.result-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(360px, 420px);
+  gap: 14px;
+  align-items: start;
+}
+
+.result-main,
+.result-aside {
+  display: grid;
+  gap: 14px;
+}
+
+.result-aside {
+  position: sticky;
+  top: 18px;
 }
 
 .feature-grid,
 .stack-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 10px;
 }
 
 .feature-item {
@@ -297,6 +366,10 @@ textarea {
   padding: 12px;
 }
 
+.result-aside .stack-grid {
+  grid-template-columns: 1fr;
+}
+
 .stack-column span {
   border-radius: 5px;
   background: #eef1f5;
@@ -307,7 +380,8 @@ textarea {
 details {
   border: 1px solid #d9dee5;
   border-radius: 8px;
-  padding: 12px;
+  padding: 13px;
+  background: #ffffff;
 }
 
 details + details {
@@ -354,6 +428,7 @@ th {
 
 .diagram {
   overflow-x: auto;
+  min-height: 260px;
 }
 
 .diagram svg {
@@ -382,6 +457,8 @@ th {
   }
 
   .sidebar {
+    position: static;
+    height: auto;
     border-right: 0;
     border-bottom: 1px solid #d9dee5;
   }
@@ -394,5 +471,19 @@ th {
   .action-row {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .result-summary,
+  .result-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .summary-metrics {
+    width: 100%;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .result-aside {
+    position: static;
   }
 }

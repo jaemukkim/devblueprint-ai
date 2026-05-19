@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  Blocks,
   Database,
   Download,
   FileText,
@@ -16,7 +17,7 @@ import { downloadMarkdown } from "./markdown.js";
 const SAMPLE_IDEAS = [
   "챗봇을 이용한 쇼핑몰 고객상담 자동화 서비스",
   "개발자를 위한 AI 기반 API 설계 자동화 도구",
-  "소상공인을 위한 예약 관리 및 고객 알림 서비스",
+  "다이어터를 위한 AI 기반 식단 관리 서비스"
 ];
 
 mermaid.initialize({
@@ -239,79 +240,104 @@ function App() {
 function BlueprintView({ blueprint }) {
   return (
     <div className="result-layout">
-      <Section title="개요">
-        <p>{blueprint.overview}</p>
-      </Section>
-
-      <Section title="핵심 기능">
-        <div className="feature-grid">
-          {blueprint.features.map((feature) => (
-            <article className="feature-item" key={feature.name}>
-              <span className={`priority ${feature.priority}`}>{feature.priority}</span>
-              <h3>{feature.name}</h3>
-              <p>{feature.description}</p>
-            </article>
-          ))}
+      <section className="result-summary">
+        <div>
+          <p className="eyebrow">Generated Blueprint</p>
+          <h2>설계도 결과</h2>
+          <p>{blueprint.overview}</p>
         </div>
-      </Section>
+        <div className="summary-metrics">
+          <Metric label="features" value={blueprint.features.length} />
+          <Metric label="apis" value={blueprint.api_spec.length} />
+          <Metric label="tables" value={blueprint.database_schema.length} />
+        </div>
+      </section>
 
-      <Section title="기술 스택">
-        <div className="stack-grid">
-          {Object.entries({
-            Backend: blueprint.tech_stack.backend,
-            Frontend: blueprint.tech_stack.frontend,
-            Database: blueprint.tech_stack.database,
-            AI: blueprint.tech_stack.ai,
-          }).map(([title, items]) => (
-            <div className="stack-column" key={title}>
-              <strong>{title}</strong>
-              {items.map((item) => (
-                <span key={item}>{item}</span>
+      <div className="result-grid">
+        <div className="result-main">
+          <Section title="핵심 기능">
+            <div className="feature-grid">
+              {blueprint.features.map((feature) => (
+                <article className="feature-item" key={feature.name}>
+                  <span className={`priority ${feature.priority}`}>{feature.priority}</span>
+                  <h3>{feature.name}</h3>
+                  <p>{feature.description}</p>
+                </article>
               ))}
             </div>
-          ))}
+          </Section>
+
+          <Section title="API 설계">
+            <div className="table-list">
+              {blueprint.api_spec.map((endpoint) => (
+                <details key={`${endpoint.method}-${endpoint.path}`} open>
+                  <summary>
+                    <code>{endpoint.method}</code>
+                    <span>{endpoint.path}</span>
+                  </summary>
+                  <p>{endpoint.description}</p>
+                  <FieldTable title="Request" rows={endpoint.request} />
+                  <FieldTable title="Response" rows={endpoint.response} />
+                </details>
+              ))}
+            </div>
+          </Section>
+
+          <Section title="데이터베이스 설계">
+            <div className="table-list">
+              {blueprint.database_schema.map((table) => (
+                <details key={table.name} open>
+                  <summary>
+                    <Database size={16} />
+                    <span>{table.name}</span>
+                  </summary>
+                  <p>{table.description}</p>
+                  <ColumnTable rows={table.columns} />
+                </details>
+              ))}
+            </div>
+          </Section>
         </div>
-        <p className="note">{blueprint.tech_stack.rationale}</p>
-      </Section>
 
-      <Section title="API 설계">
-        <div className="table-list">
-          {blueprint.api_spec.map((endpoint) => (
-            <details key={`${endpoint.method}-${endpoint.path}`} open>
-              <summary>
-                <code>{endpoint.method}</code>
-                <span>{endpoint.path}</span>
-              </summary>
-              <p>{endpoint.description}</p>
-              <FieldTable title="Request" rows={endpoint.request} />
-              <FieldTable title="Response" rows={endpoint.response} />
-            </details>
-          ))}
-        </div>
-      </Section>
+        <aside className="result-aside">
+          <Section title="기술 스택">
+            <div className="stack-grid">
+              {Object.entries({
+                Backend: blueprint.tech_stack.backend,
+                Frontend: blueprint.tech_stack.frontend,
+                Database: blueprint.tech_stack.database,
+                AI: blueprint.tech_stack.ai,
+              }).map(([title, items]) => (
+                <div className="stack-column" key={title}>
+                  <strong>{title}</strong>
+                  {items.map((item) => (
+                    <span key={item}>{item}</span>
+                  ))}
+                </div>
+              ))}
+            </div>
+            <p className="note">{blueprint.tech_stack.rationale}</p>
+          </Section>
 
-      <Section title="데이터베이스 설계">
-        <div className="table-list">
-          {blueprint.database_schema.map((table) => (
-            <details key={table.name} open>
-              <summary>
-                <Database size={16} />
-                <span>{table.name}</span>
-              </summary>
-              <p>{table.description}</p>
-              <ColumnTable rows={table.columns} />
-            </details>
-          ))}
-        </div>
-      </Section>
+          <Section title="데이터베이스 ERD">
+            <MermaidDiagram source={blueprint.database_erd} />
+          </Section>
 
-      <Section title="데이터베이스 ERD">
-        <MermaidDiagram source={blueprint.database_erd} />
-      </Section>
+          <Section title="시퀀스 다이어그램">
+            <MermaidDiagram source={blueprint.sequence_diagram} />
+          </Section>
+        </aside>
+      </div>
+    </div>
+  );
+}
 
-      <Section title="시퀀스 다이어그램">
-        <MermaidDiagram source={blueprint.sequence_diagram} />
-      </Section>
+function Metric({ label, value }) {
+  return (
+    <div className="metric">
+      <Blocks size={16} />
+      <strong>{value}</strong>
+      <span>{label}</span>
     </div>
   );
 }
