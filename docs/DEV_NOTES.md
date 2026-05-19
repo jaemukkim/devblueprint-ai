@@ -63,13 +63,27 @@ python -m uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8001 --
 Streamlit 실행:
 
 ```powershell
-python -m streamlit run frontend/streamlit_app.py
+python -m streamlit run frontend/streamlit/streamlit_app.py
 ```
 
 Streamlit을 `8502`로 실행할 경우:
 
 ```powershell
-python -m streamlit run frontend/streamlit_app.py --server.port 8502
+python -m streamlit run frontend/streamlit/streamlit_app.py --server.port 8502
+```
+
+React 실행:
+
+```powershell
+cd frontend/react
+npm install
+npm run dev
+```
+
+FastAPI를 `8001`로 실행할 경우 `frontend/react/.env.local`에 아래 값을 둡니다.
+
+```env
+VITE_API_BASE_URL=http://localhost:8001
 ```
 
 ## Environment
@@ -87,9 +101,9 @@ FRONTEND_ORIGINS=http://localhost:8501,http://localhost:8502,http://localhost:51
 REPOSITORY_BACKEND=postgres
 
 POSTGRES_DB=devblueprint
-POSTGRES_USER=devuser
-POSTGRES_PASSWORD=dev1234
-DATABASE_URL=postgresql+psycopg://devuser:dev1234@localhost:5432/devblueprint
+POSTGRES_USER=user
+POSTGRES_PASSWORD=password
+DATABASE_URL=postgresql+psycopg://user:password@localhost:5432/devblueprint
 ```
 
 포트 관계:
@@ -174,14 +188,12 @@ python -m pytest
 
 ## Next Work Candidates
 
-다음 큰 방향은 Streamlit MVP를 React/Vite 프론트엔드로 전환하는 것입니다.
+다음 큰 방향은 React/Vite 프론트엔드의 UI 품질과 기능 안정성을 높이는 것입니다.
 
 추천 순서:
 
-1. `frontend/react` 또는 `web` 경로에 React/Vite 초기 설정
-2. API client 분리
-3. 설계도 생성 화면 구현
-4. 최근 설계도 목록/상세/삭제 구현
-5. Markdown 다운로드 구현
-6. Mermaid ERD 및 sequence diagram 렌더링 구현
-7. Streamlit은 MVP 기록으로 유지하고 React를 메인 화면으로 전환
+1. React 개발 서버 실행 확인
+2. 설계도 생성, 목록, 상세, 삭제 흐름 브라우저 검증
+3. Mermaid ERD 및 sequence diagram 렌더링 확인
+4. 화면 레이아웃과 모바일 대응 개선
+5. Streamlit은 MVP 기록으로 유지하고 React를 메인 화면으로 전환

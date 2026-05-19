@@ -33,7 +33,9 @@ backend/
     schemas/          API 및 LLM output schema
     services/         생성, 검증, OpenAI 연동 로직
 frontend/
-  streamlit_app.py    MVP 화면
+  streamlit/
+    streamlit_app.py  MVP 화면
+  react/              React/Vite 프론트엔드
 migrations/           Alembic migration
 docs/
   PROJECT_CONTEXT.md
@@ -142,13 +144,27 @@ python -m uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8001 --
 Streamlit 실행:
 
 ```powershell
-python -m streamlit run frontend/streamlit_app.py
+python -m streamlit run frontend/streamlit/streamlit_app.py
 ```
 
 Streamlit을 `8502`로 실행하려면:
 
 ```powershell
-python -m streamlit run frontend/streamlit_app.py --server.port 8502
+python -m streamlit run frontend/streamlit/streamlit_app.py --server.port 8502
+```
+
+React 실행:
+
+```powershell
+cd frontend/react
+npm install
+npm run dev
+```
+
+FastAPI를 `8001`로 실행하는 경우 `frontend/react/.env.local`을 만들고 아래 값을 넣습니다.
+
+```env
+VITE_API_BASE_URL=http://localhost:8001
 ```
 
 ## API
@@ -193,7 +209,6 @@ PostgreSQL 사용 시 같은 idea 요청은 `cache_key`로 먼저 조회하고, 
 
 ## 다음 계획
 
-- Streamlit MVP 화면을 React/Vite 프론트엔드로 전환
-- React 화면에서 생성, 목록, 상세, 삭제 흐름 구현
-- UI 품질 개선
+- React 화면 UI 품질 개선
+- React 화면 기능 검증 및 Streamlit MVP 대체
 - 배포 환경 설정 정리

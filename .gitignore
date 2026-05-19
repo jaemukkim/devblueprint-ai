@@ -10,5 +10,10 @@ __pycache__/
 .ruff_cache/
 .mypy_cache/
 
+# node
+node_modules/
+dist/
+frontend/react/.env.local
+
 
 .streamlit/secrets.toml
