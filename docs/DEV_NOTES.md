@@ -4,7 +4,9 @@
 
 DevBlueprint AI는 자연어 서비스 아이디어를 입력받아 개발자가 참고할 수 있는 시스템 설계도를 생성하고, 생성 결과를 저장/조회/삭제할 수 있는 MVP입니다.
 
-현재 구현된 주요 흐름은 다음과 같습니다.
+현재 메인 화면은 React/Vite입니다. Streamlit은 초기 MVP 기록으로 `frontend/streamlit/`에 남겨두었습니다.
+
+현재 구현된 주요 흐름:
 
 - FastAPI 백엔드에서 설계도 생성 API 제공
 - OpenAI Structured Outputs로 `BlueprintResponse` schema에 맞는 결과 생성
@@ -15,24 +17,32 @@ DevBlueprint AI는 자연어 서비스 아이디어를 입력받아 개발자가
 - PostgreSQL `blueprints` 테이블에 설계도 결과 저장
 - 같은 idea 요청은 `cache_key`로 DB 결과 재사용
 - 저장된 설계도 목록 조회, 상세 조회, 삭제 API 제공
-- Streamlit MVP 화면에서 생성/목록/상세/삭제 지원
+- React 화면에서 설계도 생성, 최근 설계도 조회, 상세 열기, 삭제 지원
+- 결과 화면은 `요약 / 기능 / API / DB / 다이어그램` 탭으로 분리
 - Markdown 다운로드 지원
 - 다운로드 파일명은 사용자 idea 기반으로 생성
 - Mermaid ERD와 sequence diagram 렌더링
-- Streamlit에서 `.env`의 `API_BASE_URL` 자동 로딩
-- React/Vite 전환을 고려한 CORS 설정 포함
+- 다크 랜딩 히어로 + 실제 앱 대시보드 형태로 UI 개선 진행 중
+
+## Tomorrow Setup
+
+내일 노트북에서 이어서 작업할 때는 아래 순서로 확인합니다.
+
+1. 저장소 최신 상태 받기
+2. Python 가상환경 활성화
+3. Python 의존성 설치 확인
+4. Docker DB 실행
+5. Alembic migration 적용
+6. FastAPI 실행
+7. React 실행
+8. 브라우저에서 생성/저장/조회/삭제 확인
 
 ## Run Locally
 
-가상환경 활성화:
+프로젝트 루트에서 실행합니다.
 
 ```powershell
 .\.venv\Scripts\activate
-```
-
-의존성 설치:
-
-```powershell
 python -m pip install -r requirements.txt
 ```
 
@@ -54,22 +64,10 @@ FastAPI 실행:
 python -m uvicorn app.main:app --app-dir backend --reload
 ```
 
-만약 `8000` 포트에서 `WinError 10013`이 발생하면 `8001`로 실행합니다.
+FastAPI 주소:
 
-```powershell
-python -m uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8001 --reload
-```
-
-Streamlit 실행:
-
-```powershell
-python -m streamlit run frontend/streamlit/streamlit_app.py
-```
-
-Streamlit을 `8502`로 실행할 경우:
-
-```powershell
-python -m streamlit run frontend/streamlit/streamlit_app.py --server.port 8502
+```text
+http://localhost:8000
 ```
 
 React 실행:
@@ -80,7 +78,19 @@ npm install
 npm run dev
 ```
 
-FastAPI를 `8001`로 실행할 경우 `frontend/react/.env.local`에 아래 값을 둡니다.
+React 주소:
+
+```text
+http://localhost:5173
+```
+
+FastAPI를 `8001`로 실행해야 하는 경우:
+
+```powershell
+python -m uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8001 --reload
+```
+
+이 경우 `frontend/react/.env.local`에 아래 값을 둡니다.
 
 ```env
 VITE_API_BASE_URL=http://localhost:8001
@@ -88,33 +98,31 @@ VITE_API_BASE_URL=http://localhost:8001
 
 ## Environment
 
-`.env.sample`을 기준으로 `.env`를 구성합니다. 실제 API key, DB user, DB password는 `.env`에만 둡니다.
+루트의 `.env.sample`을 기준으로 `.env`를 구성합니다.
+
+실제 API key, DB user, DB password는 `.env`에만 둡니다. `.env.sample`, README, docs에는 실제 비밀번호를 적지 않습니다.
 
 ```env
 OPENAI_API_KEY=
 OPENAI_MODEL=gpt-4.1-mini
 USE_OPENAI=false
 
-API_BASE_URL=http://localhost:8001
+API_BASE_URL=http://localhost:8000
 FRONTEND_ORIGINS=http://localhost:8501,http://localhost:8502,http://localhost:5173
 
-REPOSITORY_BACKEND=postgres
+REPOSITORY_BACKEND=memory
 
 POSTGRES_DB=devblueprint
-POSTGRES_USER=user
-POSTGRES_PASSWORD=password
-DATABASE_URL=postgresql+psycopg://user:password@localhost:5432/devblueprint
+POSTGRES_USER=change_me_user
+POSTGRES_PASSWORD=change_me_password
+DATABASE_URL=postgresql+psycopg://change_me_user:change_me_password@localhost:5432/devblueprint
 ```
 
-포트 관계:
+PostgreSQL 저장을 확인하려면:
 
-```text
-브라우저 -> Streamlit: http://localhost:8501 또는 http://localhost:8502
-Streamlit -> FastAPI:  API_BASE_URL
-FastAPI -> PostgreSQL: DATABASE_URL
+```env
+REPOSITORY_BACKEND=postgres
 ```
-
-`API_BASE_URL`은 Streamlit이 호출할 FastAPI 주소입니다. FastAPI를 `8001`로 실행하면 `.env`의 `API_BASE_URL`도 `http://localhost:8001`이어야 합니다.
 
 ## API
 
@@ -124,6 +132,27 @@ POST   /api/v1/blueprint/generate
 GET    /api/v1/blueprints
 GET    /api/v1/blueprints/{blueprint_id}
 DELETE /api/v1/blueprints/{blueprint_id}
+```
+
+## Frontend Notes
+
+React 화면 구조:
+
+- 상단 고정 navigation
+- 다크 히어로 영역
+- 아이디어 입력 카드
+- 생성 산출물 카드
+- 추천 아이디어 버튼
+- 최근 설계도 카드 목록
+- 결과 탭: 요약 / 기능 / API / DB / 다이어그램
+
+주요 파일:
+
+```text
+frontend/react/src/App.jsx
+frontend/react/src/styles.css
+frontend/react/src/api.js
+frontend/react/src/markdown.js
 ```
 
 ## Architecture Notes
@@ -158,7 +187,7 @@ created_at  생성 시각
 - LLM 결과는 자유 텍스트가 아니라 Pydantic schema 기반 structured output으로 받습니다.
 - API 응답 계약은 `BlueprintResponse`를 기준으로 고정합니다.
 - 사용자-facing 설명은 한국어로 생성하고, API path, HTTP method, JSON type, DB type, constraint 같은 기술 식별자는 영어를 유지합니다.
-- MVP 화면은 Streamlit으로 빠르게 검증하고, 다음 단계에서 React/Vite로 전환합니다.
+- Streamlit MVP로 빠르게 검증한 뒤 React/Vite를 메인 화면으로 전환했습니다.
 - React/Vite 개발 서버 기본 origin인 `http://localhost:5173`을 CORS에 포함했습니다.
 - 생성형 결과 특성상 Update는 MVP 범위에서 제외하고 Create/Read/Delete 중심으로 구성했습니다.
 
@@ -186,14 +215,20 @@ python -m pytest
 # 20 passed
 ```
 
-## Next Work Candidates
+React 빌드:
 
-다음 큰 방향은 React/Vite 프론트엔드의 UI 품질과 기능 안정성을 높이는 것입니다.
+```powershell
+cd frontend/react
+npm run build
+```
+
+## Next Work Candidates
 
 추천 순서:
 
-1. React 개발 서버 실행 확인
-2. 설계도 생성, 목록, 상세, 삭제 흐름 브라우저 검증
-3. Mermaid ERD 및 sequence diagram 렌더링 확인
-4. 화면 레이아웃과 모바일 대응 개선
-5. Streamlit은 MVP 기록으로 유지하고 React를 메인 화면으로 전환
+1. 강의실 노트북에서 FastAPI + React 실행 확인
+2. React 화면에서 설계도 생성, 목록 조회, 상세 열기, 삭제 흐름 확인
+3. PostgreSQL 저장 여부 확인
+4. 모바일 화면 반응형 확인
+5. Mermaid ERD 및 sequence diagram 렌더링 확인
+6. README에 화면 스크린샷 추가 여부 검토
