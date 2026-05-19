@@ -1,12 +1,19 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Blocks,
+  Braces,
   Database,
   Download,
   FileText,
+  GitBranch,
+  Info,
+  LayoutGrid,
   Loader2,
+  Network,
   RefreshCw,
   Send,
+  Server,
+  Sparkles,
   Trash2,
 } from "lucide-react";
 import mermaid from "mermaid";
@@ -20,6 +27,12 @@ const SAMPLE_IDEAS = [
   "다이어터를 위한 AI 기반 식단 관리 서비스"
 ];
 
+const IDEA_SUGGESTIONS = [
+  "실시간 협업형 시스템 설계 화이트보드",
+  "소셜 로그인이 있는 커뮤니티 플랫폼",
+  "AI 추천 기반 독서 기록 앱"
+];
+
 mermaid.initialize({
   startOnLoad: false,
   theme: "default",
@@ -29,6 +42,7 @@ mermaid.initialize({
 function MermaidDiagram({ source }) {
   const [svg, setSvg] = useState("");
   const [error, setError] = useState("");
+  const [view, setView] = useState("diagram");
 
   useEffect(() => {
     let mounted = true;
@@ -54,17 +68,34 @@ function MermaidDiagram({ source }) {
     };
   }, [source]);
 
-  if (error) {
-    return <pre className="diagram-error">{error}</pre>;
-  }
-
-  return <div className="diagram" dangerouslySetInnerHTML={{ __html: svg }} />;
+  return (
+    <div className="diagram-panel">
+      <div className="view-tabs">
+        <button className={view === "diagram" ? "active" : ""} onClick={() => setView("diagram")}>
+          Diagram
+        </button>
+        <button className={view === "code" ? "active" : ""} onClick={() => setView("code")}>
+          Code
+        </button>
+      </div>
+      {view === "code" ? (
+        <pre className="code-block">{source}</pre>
+      ) : error ? (
+        <pre className="diagram-error">{error}</pre>
+      ) : (
+        <div className="diagram" dangerouslySetInnerHTML={{ __html: svg }} />
+      )}
+    </div>
+  );
 }
 
-function Section({ title, children }) {
+function Section({ title, description, children }) {
   return (
     <section className="section">
-      <h2>{title}</h2>
+      <div className="section-heading">
+        <h2>{title}</h2>
+        {description && <p>{description}</p>}
+      </div>
       {children}
     </section>
   );
@@ -151,182 +182,306 @@ function App() {
 
   return (
     <div className="app-shell">
-      <aside className="sidebar">
-        <div className="sidebar-header">
-          <div>
-            <p className="eyebrow">Saved Blueprints</p>
-            <h1>최근 설계도</h1>
-          </div>
-          <button className="icon-button" onClick={() => refreshRecent()} aria-label="최근 설계도 새로고침">
-            <RefreshCw size={18} />
+      <header className="app-nav">
+        <div className="brand">
+          <span className="brand-mark">
+            <LayoutGrid size={18} />
+          </span>
+          <strong>Dev<span>Blueprint</span> AI</strong>
+        </div>
+        <nav className="nav-links" aria-label="주요 메뉴">
+          <a href="#workspace">대시보드</a>
+          <a href="#recent">내 설계도</a>
+          <a href="#result">API 설계</a>
+          <a href="#result">ERD / DB</a>
+          <a href="#workspace">시퀀스</a>
+        </nav>
+        {blueprint ? (
+          <button className="nav-action" onClick={() => downloadMarkdown(selectedIdea, blueprint)}>
+            <Download size={18} />
+            Markdown
           </button>
-        </div>
-
-        <div className="recent-list">
-          {recentBlueprints.length === 0 ? (
-            <p className="empty-text">저장된 설계도가 아직 없습니다.</p>
-          ) : (
-            recentBlueprints.map((item) => (
-              <div className="recent-row" key={item.id}>
-                <button
-                  className={item.id === selectedBlueprintId ? "recent-item active" : "recent-item"}
-                  onClick={() => handleOpen(item.id)}
-                >
-                  <span>{item.idea}</span>
-                  <small>{new Date(item.created_at).toLocaleString()}</small>
-                </button>
-                <button className="danger-button" onClick={() => handleDelete(item.id)} aria-label="설계도 삭제">
-                  <Trash2 size={16} />
-                </button>
-              </div>
-            ))
-          )}
-        </div>
-      </aside>
+        ) : (
+          <a className="nav-action" href="#workspace">
+            설계 시작
+          </a>
+        )}
+      </header>
 
       <main className="workspace">
-        <header className="topbar">
-          <div>
-            <p className="eyebrow">DevBlueprint AI</p>
-            <h1>서비스 아이디어를 시스템 설계도로 변환</h1>
-          </div>
-          {blueprint && (
-            <button className="secondary-button" onClick={() => downloadMarkdown(selectedIdea, blueprint)}>
-              <Download size={18} />
-              Markdown
-            </button>
-          )}
-        </header>
+        <section className="hero-section">
+          <div className="hero-copy">
+            <span className="hero-pill">AI 기반 시스템 설계</span>
+            <h1>
+              아이디어를
+              <span>설계도로 만드는</span>
+              가장 빠른 방법
+            </h1>
+            <p>서비스를 자연어로 설명하면 핵심 기능, API, DB, ERD, 시퀀스 다이어그램까지 한 번에 정리합니다.</p>
 
-        <section className="input-panel">
-          <div className="sample-row">
-            {SAMPLE_IDEAS.map((sample) => (
-              <button key={sample} className="sample-button" onClick={() => setIdea(sample)}>
-                {sample}
+            <div className="hero-actions">
+              <a className="primary-link" href="#workspace">지금 바로 시작</a>
+              <button className="ghost-button" onClick={() => setIdea(SAMPLE_IDEAS[1])}>예시 보기</button>
+            </div>
+
+            <div className="hero-stats">
+              <div>
+                <strong>2.4s</strong>
+                <span>평균 생성 시간</span>
+              </div>
+              <div>
+                <strong>5가지</strong>
+                <span>설계 산출물</span>
+              </div>
+              <div>
+                <strong>무료</strong>
+                <span>로컬 개발 플랜</span>
+              </div>
+            </div>
+
+            <div className="artifact-section">
+              <span className="section-kicker">생성 산출물</span>
+              <div className="artifact-grid">
+                <article className="artifact-card">
+                  <span className="artifact-icon blue"><Server size={18} /></span>
+                  <strong>REST API 설계</strong>
+                  <p>endpoint, HTTP method, 요청/응답 구조를 자동 정의</p>
+                </article>
+                <article className="artifact-card">
+                  <span className="artifact-icon violet"><Database size={18} /></span>
+                  <strong>ERD & DB 설계</strong>
+                  <p>테이블 구조, 관계, 인덱스까지 시각화된 다이어그램 생성</p>
+                </article>
+                <article className="artifact-card">
+                  <span className="artifact-icon green"><GitBranch size={18} /></span>
+                  <strong>시퀀스 다이어그램</strong>
+                  <p>주요 플로우의 컴포넌트 간 상호작용을 시각적으로 표현</p>
+                </article>
+              </div>
+            </div>
+          </div>
+
+          <section className="input-panel hero-input" id="workspace">
+            <div className="suggestion-panel">
+              <p>이런 아이디어 어때요?</p>
+              <div>
+                {IDEA_SUGGESTIONS.map((suggestion) => (
+                  <button key={suggestion} onClick={() => setIdea(suggestion)} type="button">
+                    <Sparkles size={14} />
+                    {suggestion}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <label htmlFor="idea">서비스 아이디어</label>
+            <textarea
+              id="idea"
+              value={idea}
+              onChange={(event) => setIdea(event.target.value)}
+              placeholder="예: 실시간 채팅 앱을 만들고 싶어요. 사용자 인증, 채팅방 생성, 파일 공유 기능이 필요해요."
+            />
+
+            <div className="action-row">
+              <button className="primary-button" onClick={handleGenerate} disabled={!canGenerate}>
+                {loading ? <Loader2 className="spin" size={18} /> : <Send size={18} />}
+                설계도 생성
               </button>
-            ))}
-          </div>
+              <p className="action-hint">
+                <Info size={15} />
+                구체적일수록 더 정확한 설계도가 생성돼요
+              </p>
+              {error && <p className="error-text">{error}</p>}
+            </div>
 
-          <label htmlFor="idea">서비스 아이디어</label>
-          <textarea
-            id="idea"
-            value={idea}
-            onChange={(event) => setIdea(event.target.value)}
-            placeholder="예: 스포츠 야구 분석 및 승부 예측 서비스"
-          />
-
-          <div className="action-row">
-            <button className="primary-button" onClick={handleGenerate} disabled={!canGenerate}>
-              {loading ? <Loader2 className="spin" size={18} /> : <Send size={18} />}
-              설계도 생성
-            </button>
-            {error && <p className="error-text">{error}</p>}
-          </div>
+            <div className="generation-preview">
+              <span>핵심 기능 5개 도출</span>
+              <span>REST API endpoint 설계</span>
+              <span>ERD 및 DB 구조 생성</span>
+              <span>시퀀스 다이어그램 정리</span>
+            </div>
+          </section>
         </section>
 
-        {!blueprint ? (
-          <section className="empty-state">
-            <FileText size={34} />
-            <p>아이디어를 입력하면 기능, API, DB, 다이어그램 설계도가 여기에 표시됩니다.</p>
-          </section>
-        ) : (
-          <BlueprintView blueprint={blueprint} />
-        )}
+        <section className="app-board" id="result">
+          <aside className="recent-panel" id="recent">
+            <div className="panel-heading">
+              <div>
+                <p className="eyebrow">Saved Blueprints</p>
+                <h2>최근 설계도</h2>
+              </div>
+              <button className="icon-button" onClick={() => refreshRecent()} aria-label="최근 설계도 새로고침">
+                <RefreshCw size={18} />
+              </button>
+            </div>
+
+            <div className="recent-list">
+              {recentBlueprints.length === 0 ? (
+                <p className="empty-text">저장된 설계도가 아직 없습니다.</p>
+              ) : (
+                recentBlueprints.map((item) => (
+                  <div className="recent-row" key={item.id}>
+                    <button
+                      className={item.id === selectedBlueprintId ? "recent-item active" : "recent-item"}
+                      onClick={() => handleOpen(item.id)}
+                    >
+                      <span className="recent-icon"><Network size={18} /></span>
+                      <span className="recent-content">
+                        <strong>{item.idea}</strong>
+                        <small>{new Date(item.created_at).toLocaleString()}</small>
+                      </span>
+                      <span className="recent-status">완료</span>
+                    </button>
+                    <button className="danger-button" onClick={() => handleDelete(item.id)} aria-label="설계도 삭제">
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+          </aside>
+
+          <div className="result-area">
+            {!blueprint ? (
+              <section className="empty-state">
+                <FileText size={34} />
+                <p>아이디어를 입력하면 기능, API, DB, 다이어그램 설계도가 여기에 표시됩니다.</p>
+              </section>
+            ) : (
+              <BlueprintView blueprint={blueprint} />
+            )}
+          </div>
+        </section>
       </main>
     </div>
   );
 }
 
 function BlueprintView({ blueprint }) {
+  const [activeTab, setActiveTab] = useState("summary");
+
+  const tabs = [
+    { id: "summary", label: "요약" },
+    { id: "features", label: "기능" },
+    { id: "api", label: "API" },
+    { id: "database", label: "DB" },
+    { id: "diagrams", label: "다이어그램" },
+  ];
+
   return (
     <div className="result-layout">
-      <section className="result-summary">
-        <div>
-          <p className="eyebrow">Generated Blueprint</p>
-          <h2>설계도 결과</h2>
-          <p>{blueprint.overview}</p>
-        </div>
-        <div className="summary-metrics">
-          <Metric label="features" value={blueprint.features.length} />
-          <Metric label="apis" value={blueprint.api_spec.length} />
-          <Metric label="tables" value={blueprint.database_schema.length} />
-        </div>
-      </section>
+      <nav className="result-tabs" aria-label="설계도 결과 탭">
+        {tabs.map((tab) => (
+          <button
+            className={activeTab === tab.id ? "active" : ""}
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            type="button"
+          >
+            {tab.label}
+          </button>
+        ))}
+      </nav>
 
-      <div className="result-grid">
-        <div className="result-main">
-          <Section title="핵심 기능">
-            <div className="feature-grid">
+      <div className="tab-panel">
+        {activeTab === "summary" && (
+          <div className="summary-tab">
+            <section className="result-summary">
+              <div>
+                <p className="eyebrow">Generated Blueprint</p>
+                <h2>설계도 결과</h2>
+                <p>{blueprint.overview}</p>
+              </div>
+              <div className="summary-metrics">
+                <Metric label="features" value={blueprint.features.length} />
+                <Metric label="apis" value={blueprint.api_spec.length} />
+                <Metric label="tables" value={blueprint.database_schema.length} />
+              </div>
+            </section>
+
+            <Section title="기술 스택" description="서비스 성격에 맞춘 구현 기술 후보입니다.">
+              <div className="stack-grid stack-grid-wide">
+                {Object.entries({
+                  Backend: blueprint.tech_stack.backend,
+                  Frontend: blueprint.tech_stack.frontend,
+                  Database: blueprint.tech_stack.database,
+                  AI: blueprint.tech_stack.ai,
+                }).map(([title, items]) => (
+                  <div className="stack-column" key={title}>
+                    <strong>{title}</strong>
+                    {items.map((item) => (
+                      <span key={item}>{item}</span>
+                    ))}
+                  </div>
+                ))}
+              </div>
+              <p className="note">{blueprint.tech_stack.rationale}</p>
+            </Section>
+          </div>
+        )}
+
+        {activeTab === "features" && (
+          <Section title="핵심 기능" description="MVP 구현 우선순위를 기준으로 기능을 정리합니다.">
+            <div className="feature-list">
               {blueprint.features.map((feature) => (
                 <article className="feature-item" key={feature.name}>
-                  <span className={`priority ${feature.priority}`}>{feature.priority}</span>
-                  <h3>{feature.name}</h3>
+                  <div className="feature-title">
+                    <span className={`priority ${feature.priority}`}>{feature.priority}</span>
+                    <h3>{feature.name}</h3>
+                  </div>
                   <p>{feature.description}</p>
                 </article>
               ))}
             </div>
           </Section>
+        )}
 
-          <Section title="API 설계">
-            <div className="table-list">
+        {activeTab === "api" && (
+          <Section title="API 설계" description="프론트엔드와 백엔드가 주고받을 endpoint 초안입니다.">
+            <div className="endpoint-grid">
               {blueprint.api_spec.map((endpoint) => (
-                <details key={`${endpoint.method}-${endpoint.path}`} open>
-                  <summary>
-                    <code>{endpoint.method}</code>
+                <article className="endpoint-card" key={`${endpoint.method}-${endpoint.path}`}>
+                  <div className="endpoint-card-header">
+                    <MethodBadge method={endpoint.method} />
                     <span>{endpoint.path}</span>
-                  </summary>
-                  <p>{endpoint.description}</p>
+                  </div>
+                  <p className="endpoint-description">{endpoint.description}</p>
                   <FieldTable title="Request" rows={endpoint.request} />
                   <FieldTable title="Response" rows={endpoint.response} />
-                </details>
+                </article>
               ))}
             </div>
           </Section>
+        )}
 
-          <Section title="데이터베이스 설계">
-            <div className="table-list">
+        {activeTab === "database" && (
+          <Section title="데이터베이스 설계" description="초기 구현에 필요한 주요 table과 column 구조입니다.">
+            <div className="schema-grid">
               {blueprint.database_schema.map((table) => (
-                <details key={table.name} open>
-                  <summary>
+                <article className="schema-card" key={table.name}>
+                  <div className="schema-card-header">
                     <Database size={16} />
                     <span>{table.name}</span>
-                  </summary>
-                  <p>{table.description}</p>
-                  <ColumnTable rows={table.columns} />
-                </details>
+                  </div>
+                  <p className="schema-description">{table.description}</p>
+                  <ColumnList rows={table.columns} />
+                </article>
               ))}
             </div>
           </Section>
-        </div>
+        )}
 
-        <aside className="result-aside">
-          <Section title="기술 스택">
-            <div className="stack-grid">
-              {Object.entries({
-                Backend: blueprint.tech_stack.backend,
-                Frontend: blueprint.tech_stack.frontend,
-                Database: blueprint.tech_stack.database,
-                AI: blueprint.tech_stack.ai,
-              }).map(([title, items]) => (
-                <div className="stack-column" key={title}>
-                  <strong>{title}</strong>
-                  {items.map((item) => (
-                    <span key={item}>{item}</span>
-                  ))}
-                </div>
-              ))}
-            </div>
-            <p className="note">{blueprint.tech_stack.rationale}</p>
-          </Section>
+        {activeTab === "diagrams" && (
+          <div className="diagram-grid">
+            <Section title="데이터베이스 ERD" description="테이블 간 관계를 Mermaid ERD로 표현합니다.">
+              <MermaidDiagram source={blueprint.database_erd} />
+            </Section>
 
-          <Section title="데이터베이스 ERD">
-            <MermaidDiagram source={blueprint.database_erd} />
-          </Section>
-
-          <Section title="시퀀스 다이어그램">
-            <MermaidDiagram source={blueprint.sequence_diagram} />
-          </Section>
-        </aside>
+            <Section title="시퀀스 다이어그램" description="사용자 요청이 처리되는 주요 흐름입니다.">
+              <MermaidDiagram source={blueprint.sequence_diagram} />
+            </Section>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -339,6 +494,15 @@ function Metric({ label, value }) {
       <strong>{value}</strong>
       <span>{label}</span>
     </div>
+  );
+}
+
+function MethodBadge({ method }) {
+  return (
+    <code className={`method-badge method-${method.toLowerCase()}`}>
+      <Braces size={13} />
+      {method}
+    </code>
   );
 }
 
@@ -370,29 +534,43 @@ function FieldTable({ title, rows }) {
   );
 }
 
-function ColumnTable({ rows }) {
+const CONSTRAINT_LABELS = {
+  primary_key: "PRIMARY KEY",
+  not_null: "NOT NULL",
+  foreign_key: "FOREIGN KEY",
+  unique: "UNIQUE",
+};
+
+function formatConstraint(constraint) {
+  const normalized = constraint.toLowerCase();
+  const normalizedKey = normalized.replaceAll(" ", "_");
+
+  if (normalized.startsWith("foreign key")) {
+    return "FOREIGN KEY";
+  }
+
+  return CONSTRAINT_LABELS[normalizedKey] || CONSTRAINT_LABELS[normalized] || constraint;
+}
+
+function ColumnList({ rows }) {
   return (
-    <div className="data-block">
-      <table>
-        <thead>
-          <tr>
-            <th>name</th>
-            <th>type</th>
-            <th>constraints</th>
-            <th>description</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => (
-            <tr key={row.name}>
-              <td>{row.name}</td>
-              <td>{row.type}</td>
-              <td>{row.constraints.join(", ")}</td>
-              <td>{row.description}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div className="column-list">
+      {rows.map((row) => (
+        <div className="column-row" key={row.name}>
+          <div className="column-main">
+            <strong>{row.name}</strong>
+          </div>
+          <span className="column-type">{row.type}</span>
+          <div className="constraint-list">
+            {row.constraints.map((constraint) => (
+              <span className="constraint-badge" key={`${row.name}-${constraint}`} title={constraint}>
+                {formatConstraint(constraint)}
+              </span>
+            ))}
+          </div>
+          <p>{row.description}</p>
+        </div>
+      ))}
     </div>
   );
 }
