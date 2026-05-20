@@ -5,6 +5,15 @@ from app.services.llm_client import BlueprintGenerationError
 
 
 SNAKE_CASE_PATTERN = re.compile(r"^[a-z][a-z0-9_]*$")
+GENERIC_FEATURE_NAMES = {
+    "아이디어 분석",
+    "기능 요구사항 정리",
+    "API 설계 생성",
+    "데이터 모델 제안",
+    "시퀀스 다이어그램 생성",
+    "결과 다운로드",
+}
+MIN_FEATURE_DESCRIPTION_LENGTH = 20
 
 
 def collect_blueprint_quality_errors(blueprint: BlueprintResponse) -> list[str]:
@@ -14,8 +23,11 @@ def collect_blueprint_quality_errors(blueprint: BlueprintResponse) -> list[str]:
     validate_collection_size("features", blueprint.features, 5, 8, errors)
     validate_collection_size("api_spec", blueprint.api_spec, 4, 8, errors)
     validate_collection_size("database_schema", blueprint.database_schema, 3, 6, errors)
+    validate_feature_quality(blueprint, errors)
     validate_api_paths(blueprint, errors)
+    validate_api_fields(blueprint, errors)
     validate_database_names(blueprint, errors)
+    validate_database_primary_keys(blueprint, errors)
     validate_database_erd(blueprint, errors)
     validate_sequence_diagram(blueprint, errors)
 
@@ -54,6 +66,31 @@ def validate_api_paths(blueprint: BlueprintResponse, errors: list[str]) -> None:
             errors.append(f"api path must not contain spaces: {api.path}")
 
 
+def validate_feature_quality(blueprint: BlueprintResponse, errors: list[str]) -> None:
+    """기능 목록이 placeholder처럼 얕거나 설명이 너무 짧지 않은지 확인합니다."""
+    for feature in blueprint.features:
+        if feature.name in GENERIC_FEATURE_NAMES:
+            errors.append(f"feature name is too generic: {feature.name}")
+
+        if len(feature.description.strip()) < MIN_FEATURE_DESCRIPTION_LENGTH:
+            errors.append(f"feature description is too short: {feature.name}")
+
+
+def validate_api_fields(blueprint: BlueprintResponse, errors: list[str]) -> None:
+    """API 입출력 필드가 실제 구현 참고에 필요한 최소 정보를 갖췄는지 확인합니다."""
+    for api in blueprint.api_spec:
+        if not api.response:
+            errors.append(f"api response fields must not be empty: {api.method} {api.path}")
+
+        for field in [*api.request, *api.response]:
+            if not field.name.strip():
+                errors.append(f"api field name must not be empty: {api.method} {api.path}")
+            if not field.type.strip():
+                errors.append(f"api field type must not be empty: {api.method} {api.path}.{field.name}")
+            if len(field.description.strip()) < 10:
+                errors.append(f"api field description is too short: {api.method} {api.path}.{field.name}")
+
+
 def validate_database_names(blueprint: BlueprintResponse, errors: list[str]) -> None:
     """DB table과 column 이름이 snake_case 규칙을 따르는지 확인합니다."""
     for table in blueprint.database_schema:
@@ -65,13 +102,39 @@ def validate_database_names(blueprint: BlueprintResponse, errors: list[str]) -> 
                 errors.append(f"column name must be snake_case: {table.name}.{column.name}")
 
 
+def validate_database_primary_keys(blueprint: BlueprintResponse, errors: list[str]) -> None:
+    """각 테이블이 구현 가능한 기본 식별자를 갖고 있는지 확인합니다."""
+    for table in blueprint.database_schema:
+        has_primary_key = any(
+            normalize_constraint(constraint) == "primary_key"
+            for column in table.columns
+            for constraint in column.constraints
+        )
+
+        if not has_primary_key:
+            errors.append(f"table must include a primary_key column: {table.name}")
+
+
 def validate_database_erd(blueprint: BlueprintResponse, errors: list[str]) -> None:
     """Mermaid ERD로 렌더링 가능한 최소 형식을 확인합니다."""
-    if not blueprint.database_erd.strip().startswith("erDiagram"):
+    erd = blueprint.database_erd.strip()
+    if not erd.startswith("erDiagram"):
         errors.append("database_erd must start with 'erDiagram'")
+        return
+
+    table_names = {table.name for table in blueprint.database_schema}
+    missing_tables = sorted(table_name for table_name in table_names if table_name not in erd)
+
+    for table_name in missing_tables:
+        errors.append(f"database_erd must include table from database_schema: {table_name}")
 
 
 def validate_sequence_diagram(blueprint: BlueprintResponse, errors: list[str]) -> None:
     """Mermaid 시퀀스 다이어그램으로 렌더링 가능한 최소 형식을 확인합니다."""
     if not blueprint.sequence_diagram.strip().startswith("sequenceDiagram"):
         errors.append("sequence_diagram must start with 'sequenceDiagram'")
+
+
+def normalize_constraint(constraint: str) -> str:
+    """constraint 표기를 비교하기 쉽게 snake_case 소문자로 정규화합니다."""
+    return constraint.strip().lower().replace(" ", "_")

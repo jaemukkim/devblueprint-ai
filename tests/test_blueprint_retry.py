@@ -17,11 +17,11 @@ def make_blueprint(api_path: str = "/api/v1/items") -> BlueprintResponse:
     return BlueprintResponse(
         overview="테스트용 설계도입니다.",
         features=[
-            Feature(name="기능 A", description="설명 A", priority="high"),
-            Feature(name="기능 B", description="설명 B", priority="medium"),
-            Feature(name="기능 C", description="설명 C", priority="low"),
-            Feature(name="기능 D", description="설명 D", priority="medium"),
-            Feature(name="기능 E", description="설명 E", priority="low"),
+            Feature(name="도서 기록 작성", description="사용자가 읽은 책과 감상을 기록할 수 있게 합니다.", priority="high"),
+            Feature(name="독서 목표 관리", description="월별 독서 목표와 진행률을 관리할 수 있게 합니다.", priority="medium"),
+            Feature(name="AI 도서 추천", description="기록된 선호도를 바탕으로 다음에 읽을 책을 추천합니다.", priority="high"),
+            Feature(name="평점 통계 조회", description="사용자가 남긴 평점과 장르별 독서 패턴을 요약합니다.", priority="low"),
+            Feature(name="추천 피드백 저장", description="추천 결과에 대한 사용자의 반응을 저장해 품질을 개선합니다.", priority="medium"),
         ],
         tech_stack=TechStack(
             backend=["FastAPI"],

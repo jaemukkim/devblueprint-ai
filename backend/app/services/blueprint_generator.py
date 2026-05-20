@@ -12,7 +12,7 @@ from app.schemas.blueprint import (
 )
 from app.services.blueprint_validator import collect_blueprint_quality_errors, validate_blueprint_quality
 from app.services.llm_client import BlueprintGenerationError, request_blueprint_from_openai
-from app.services.prompts import build_blueprint_prompt
+from app.services.prompts import BLUEPRINT_PROMPT_VERSION, build_blueprint_prompt
 
 
 MAX_OPENAI_GENERATION_ATTEMPTS = 3
@@ -66,7 +66,7 @@ def normalize_idea(idea: str) -> str:
 def build_cache_key(idea: str) -> str:
     """OpenAI 사용 여부와 모델이 다른 결과가 같은 캐시에 섞이지 않도록 cache key를 만듭니다."""
     source = "openai" if settings.use_openai else "placeholder"
-    return f"{source}:{settings.openai_model}:{normalize_idea(idea)}"
+    return f"{source}:{settings.openai_model}:{BLUEPRINT_PROMPT_VERSION}:{normalize_idea(idea)}"
 
 
 def build_placeholder_blueprint(payload: BlueprintRequest) -> BlueprintResponse:
@@ -77,33 +77,33 @@ def build_placeholder_blueprint(payload: BlueprintRequest) -> BlueprintResponse:
         overview=f"'{idea}'에 대한 MVP 중심 시스템 설계도입니다.",
         features=[
             Feature(
-                name="아이디어 분석",
-                description="사용자가 입력한 서비스 아이디어를 분석하고 핵심 요구사항을 추출합니다.",
+                name="아이디어 제출",
+                description="사용자가 만들고 싶은 서비스 아이디어와 필요한 기능을 자연어로 제출합니다.",
                 priority="high",
             ),
             Feature(
-                name="기능 요구사항 정리",
-                description="MVP에서 먼저 구현할 기능과 이후 확장할 기능을 구분합니다.",
+                name="설계 결과 저장",
+                description="생성된 설계도와 원본 아이디어를 저장해 나중에 다시 조회할 수 있게 합니다.",
                 priority="high",
             ),
             Feature(
-                name="API 설계 생성",
-                description="FastAPI로 구현할 수 있는 REST API 초안을 생성합니다.",
+                name="도메인 API 초안",
+                description="입력한 서비스 성격에 맞는 REST API endpoint와 입출력 필드를 제안합니다.",
                 priority="high",
             ),
             Feature(
-                name="데이터 모델 제안",
-                description="초기 저장이 필요하지 않아도 향후 확장 가능한 DB schema를 제안합니다.",
+                name="데이터 모델 설계",
+                description="서비스 구현에 필요한 테이블, 컬럼, 관계를 PostgreSQL 기준으로 정리합니다.",
                 priority="medium",
             ),
             Feature(
-                name="시퀀스 다이어그램 생성",
-                description="주요 사용자 흐름을 Mermaid sequenceDiagram으로 표현합니다.",
+                name="주요 흐름 시각화",
+                description="사용자의 핵심 요청이 화면, API, 저장소를 거치는 과정을 시퀀스로 표현합니다.",
                 priority="medium",
             ),
             Feature(
-                name="결과 다운로드",
-                description="생성된 설계도를 Markdown 문서로 내려받을 수 있게 합니다.",
+                name="Markdown 문서화",
+                description="완성된 설계도를 개발자가 공유하기 쉬운 Markdown 문서로 내려받게 합니다.",
                 priority="low",
             ),
         ],

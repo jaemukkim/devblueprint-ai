@@ -43,6 +43,24 @@ const TECH_STACK_CATEGORY_ICONS = {
   AI: Bot,
 };
 
+// 결과 화면 탭 정의를 상단 메뉴와 결과 탭이 함께 사용합니다.
+const RESULT_TABS = [
+  { id: "summary", label: "요약" },
+  { id: "features", label: "기능" },
+  { id: "api", label: "API" },
+  { id: "database", label: "DB" },
+  { id: "diagrams", label: "다이어그램" },
+];
+
+// 생성 대기 화면에서 순차적으로 보여줄 작업 단계입니다.
+const GENERATION_STEPS = [
+  "아이디어 분석",
+  "기능 요구사항 정리",
+  "API 초안 구성",
+  "DB/ERD 설계",
+  "시퀀스 정리",
+];
+
 // 네트워크가 즉시 실패해도 사용자가 클릭 피드백을 인지할 수 있는 최소 표시 시간입니다.
 const GENERATION_FEEDBACK_MIN_MS = 600;
 
@@ -126,6 +144,11 @@ function wait(ms) {
   });
 }
 
+// 상단 메뉴 클릭 시 같은 화면 안의 대상 영역으로 부드럽게 이동합니다.
+function scrollToSection(id) {
+  document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
 // 기술 스택 이름을 아이콘 칩과 함께 렌더링해 목록을 빠르게 훑어볼 수 있게 합니다.
 function TechStackColumn({ title, items }) {
   const CategoryIcon = TECH_STACK_CATEGORY_ICONS[title] || Blocks;
@@ -162,6 +185,10 @@ function App() {
   const [loading, setLoading] = useState(false);
   // 설계도 생성 요청 중인지 구분해 홈 입력 패널에 전용 피드백을 표시합니다.
   const [isGenerating, setIsGenerating] = useState(false);
+  // 긴 생성 시간 동안 현재 어느 단계처럼 보일지 관리합니다.
+  const [generationStepIndex, setGenerationStepIndex] = useState(0);
+  // 상단 메뉴와 결과 탭이 같은 선택 상태를 공유하도록 관리합니다.
+  const [activeResultTab, setActiveResultTab] = useState("summary");
   const [error, setError] = useState("");
 
   const canGenerate = idea.trim().length >= 5 && !loading;
@@ -180,6 +207,21 @@ function App() {
     refreshRecent().catch((err) => setError(err.message));
   }, []);
 
+  useEffect(() => {
+    if (!isGenerating) {
+      setGenerationStepIndex(0);
+      return undefined;
+    }
+
+    const intervalId = window.setInterval(() => {
+      setGenerationStepIndex((currentIndex) => Math.min(currentIndex + 1, GENERATION_STEPS.length - 1));
+    }, 4500);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [isGenerating]);
+
   async function handleGenerate() {
     if (!canGenerate) {
       return;
@@ -187,6 +229,7 @@ function App() {
 
     setLoading(true);
     setIsGenerating(true);
+    setGenerationStepIndex(0);
     setError("");
     const startedAt = Date.now();
 
@@ -194,6 +237,7 @@ function App() {
       const result = await createBlueprint(idea);
       setBlueprint(result);
       setSelectedBlueprintId(null);
+      setActiveResultTab("summary");
       await refreshRecent();
     } catch (err) {
       setError(err.message);
@@ -213,6 +257,7 @@ function App() {
       setBlueprint(stored.result);
       setIdea(stored.idea);
       setSelectedBlueprintId(stored.id);
+      setActiveResultTab("summary");
     } catch (err) {
       setError(err.message);
     } finally {
@@ -239,6 +284,11 @@ function App() {
     }
   }
 
+  function handleResultNav(tabId) {
+    setActiveResultTab(tabId);
+    scrollToSection("result");
+  }
+
   return (
     <div className="app-shell">
       <header className="app-nav">
@@ -249,11 +299,11 @@ function App() {
           <strong>Dev<span>Blueprint</span> AI</strong>
         </div>
         <nav className="nav-links" aria-label="주요 메뉴">
-          <a href="#workspace">대시보드</a>
-          <a href="#recent">내 설계도</a>
-          <a href="#result">API 설계</a>
-          <a href="#result">ERD / DB</a>
-          <a href="#workspace">시퀀스</a>
+          <button type="button" onClick={() => scrollToSection("workspace")}>대시보드</button>
+          <button type="button" onClick={() => scrollToSection("recent")}>내 설계도</button>
+          <button type="button" onClick={() => handleResultNav("api")}>API 설계</button>
+          <button type="button" onClick={() => handleResultNav("database")}>ERD / DB</button>
+          <button type="button" onClick={() => handleResultNav("diagrams")}>시퀀스</button>
         </nav>
         {blueprint ? (
           <button className="nav-action" onClick={() => downloadMarkdown(selectedIdea, blueprint)}>
@@ -348,12 +398,12 @@ function App() {
               </button>
               <p className="action-hint">
                 <Info size={15} />
-                {isGenerating ? "AI가 기능, API, DB 구조를 정리하고 있어요" : "구체적일수록 더 정확한 설계도가 생성돼요"}
+                {isGenerating ? GENERATION_STEPS[generationStepIndex] : "구체적일수록 더 정확한 설계도가 생성돼요"}
               </p>
               {error && <p className="error-text">{error}</p>}
             </div>
 
-            {isGenerating ? <GenerationStatus /> : (
+            {isGenerating ? <GenerationStatus activeStepIndex={generationStepIndex} /> : (
               <div className="generation-preview">
                 <span>핵심 기능 5개 도출</span>
                 <span>REST API endpoint 설계</span>
@@ -406,7 +456,7 @@ function App() {
             {isGenerating ? (
               <section className="empty-state generating-state" aria-live="polite">
                 <Loader2 className="spin" size={34} />
-                <p>설계도를 생성하고 있습니다. 잠시만 기다려 주세요.</p>
+                <p>{GENERATION_STEPS[generationStepIndex]} 중입니다. 잠시만 기다려 주세요.</p>
               </section>
             ) : !blueprint ? (
               <section className="empty-state">
@@ -414,7 +464,7 @@ function App() {
                 <p>아이디어를 입력하면 기능, API, DB, 다이어그램 설계도가 여기에 표시됩니다.</p>
               </section>
             ) : (
-              <BlueprintView blueprint={blueprint} />
+              <BlueprintView activeTab={activeResultTab} blueprint={blueprint} setActiveTab={setActiveResultTab} />
             )}
           </div>
         </section>
@@ -424,38 +474,37 @@ function App() {
 }
 
 // 생성 대기 시간 동안 사용자가 진행 상황을 체감할 수 있도록 단계별 안내를 보여줍니다.
-function GenerationStatus() {
+function GenerationStatus({ activeStepIndex }) {
   return (
     <div className="generation-status" aria-live="polite">
       <div className="generation-status-header">
         <Loader2 className="spin" size={18} />
-        <strong>설계도 생성 중</strong>
+        <strong>{GENERATION_STEPS[activeStepIndex]}</strong>
       </div>
-      <p>아이디어를 분석하고 구현에 필요한 산출물을 차례로 만들고 있어요.</p>
+      <p>구현에 필요한 산출물을 순서대로 만들고 있어요.</p>
       <div className="generation-steps">
-        <span>요구사항 분석</span>
-        <span>API 초안 구성</span>
-        <span>DB/ERD 정리</span>
+        {GENERATION_STEPS.map((step, index) => (
+          <span
+            className={[
+              "generation-step",
+              index === activeStepIndex ? "active" : "",
+              index < activeStepIndex ? "done" : "",
+            ].filter(Boolean).join(" ")}
+            key={step}
+          >
+            {step}
+          </span>
+        ))}
       </div>
     </div>
   );
 }
 
-function BlueprintView({ blueprint }) {
-  const [activeTab, setActiveTab] = useState("summary");
-
-  const tabs = [
-    { id: "summary", label: "요약" },
-    { id: "features", label: "기능" },
-    { id: "api", label: "API" },
-    { id: "database", label: "DB" },
-    { id: "diagrams", label: "다이어그램" },
-  ];
-
+function BlueprintView({ activeTab, blueprint, setActiveTab }) {
   return (
     <div className="result-layout">
       <nav className="result-tabs" aria-label="설계도 결과 탭">
-        {tabs.map((tab) => (
+        {RESULT_TABS.map((tab) => (
           <button
             className={activeTab === tab.id ? "active" : ""}
             key={tab.id}

@@ -105,20 +105,23 @@ button:disabled {
   justify-content: center;
 }
 
-.nav-links a,
+.nav-links button,
 .nav-action,
 .primary-link,
 .ghost-button {
   text-decoration: none;
 }
 
-.nav-links a {
+.nav-links button {
+  border: 0;
+  background: transparent;
   color: #9fb0cb;
+  padding: 0;
   font-size: 14px;
   font-weight: 800;
 }
 
-.nav-links a:hover {
+.nav-links button:hover {
   color: #ffffff;
 }
 
@@ -692,11 +695,11 @@ textarea:focus {
 
 .generation-steps {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 8px;
 }
 
-.generation-steps span {
+.generation-step {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -708,6 +711,18 @@ textarea:focus {
   font-size: 12px;
   font-weight: 800;
   text-align: center;
+}
+
+.generation-step.active {
+  border-color: rgba(96, 165, 250, 0.76);
+  background: rgba(37, 99, 235, 0.36);
+  color: #ffffff;
+}
+
+.generation-step.done {
+  border-color: rgba(24, 214, 163, 0.42);
+  background: rgba(24, 214, 163, 0.14);
+  color: #b7f7e6;
 }
 
 .app-board {
@@ -822,7 +837,12 @@ textarea:focus {
 }
 
 .result-summary h2 {
+  color: var(--text);
   margin-bottom: 8px;
+}
+
+.result-summary p {
+  color: #33465f;
 }
 
 .result-summary p:last-child {

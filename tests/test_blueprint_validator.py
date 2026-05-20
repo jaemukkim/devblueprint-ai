@@ -17,11 +17,11 @@ def make_valid_blueprint() -> BlueprintResponse:
     return BlueprintResponse(
         overview="테스트용 설계도입니다.",
         features=[
-            Feature(name="기능 A", description="설명 A", priority="high"),
-            Feature(name="기능 B", description="설명 B", priority="medium"),
-            Feature(name="기능 C", description="설명 C", priority="low"),
-            Feature(name="기능 D", description="설명 D", priority="medium"),
-            Feature(name="기능 E", description="설명 E", priority="low"),
+            Feature(name="도서 기록 작성", description="사용자가 읽은 책과 감상을 기록할 수 있게 합니다.", priority="high"),
+            Feature(name="독서 목표 관리", description="월별 독서 목표와 진행률을 관리할 수 있게 합니다.", priority="medium"),
+            Feature(name="AI 도서 추천", description="기록된 선호도를 바탕으로 다음에 읽을 책을 추천합니다.", priority="high"),
+            Feature(name="평점 통계 조회", description="사용자가 남긴 평점과 장르별 독서 패턴을 요약합니다.", priority="low"),
+            Feature(name="추천 피드백 저장", description="추천 결과에 대한 사용자의 반응을 저장해 품질을 개선합니다.", priority="medium"),
         ],
         tech_stack=TechStack(
             backend=["FastAPI"],
@@ -109,11 +109,49 @@ def test_validate_blueprint_quality_rejects_invalid_api_path() -> None:
         validate_blueprint_quality(blueprint)
 
 
+def test_validate_blueprint_quality_rejects_generic_feature_name() -> None:
+    blueprint = make_valid_blueprint()
+    blueprint.features[0].name = "아이디어 분석"
+
+    with pytest.raises(BlueprintGenerationError, match="feature name is too generic"):
+        validate_blueprint_quality(blueprint)
+
+
+def test_validate_blueprint_quality_rejects_short_feature_description() -> None:
+    blueprint = make_valid_blueprint()
+    blueprint.features[0].description = "짧음"
+
+    with pytest.raises(BlueprintGenerationError, match="feature description is too short"):
+        validate_blueprint_quality(blueprint)
+
+
 def test_validate_blueprint_quality_rejects_invalid_database_name() -> None:
     blueprint = make_valid_blueprint()
     blueprint.database_schema[0].name = "TestItems"
 
     with pytest.raises(BlueprintGenerationError, match="table name must be snake_case"):
+        validate_blueprint_quality(blueprint)
+
+
+def test_validate_blueprint_quality_rejects_table_without_primary_key() -> None:
+    blueprint = make_valid_blueprint()
+    blueprint.database_schema[0].columns[0].constraints = ["not_null"]
+
+    with pytest.raises(BlueprintGenerationError, match="primary_key"):
+        validate_blueprint_quality(blueprint)
+
+
+def test_validate_blueprint_quality_rejects_erd_missing_schema_table() -> None:
+    blueprint = make_valid_blueprint()
+    blueprint.database_erd = (
+        "erDiagram\n"
+        "  test_items ||--o{ test_item_events : has\n"
+        "  test_items {\n"
+        "    uuid id PK\n"
+        "  }"
+    )
+
+    with pytest.raises(BlueprintGenerationError, match="database_erd must include table"):
         validate_blueprint_quality(blueprint)
 
 
