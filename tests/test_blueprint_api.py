@@ -10,9 +10,12 @@ client = TestClient(app)
 
 def test_health_check_returns_ok() -> None:
     response = client.get("/health")
+    data = response.json()
 
     assert response.status_code == 200
-    assert response.json() == {"status": "ok"}
+    assert data["status"] == "ok"
+    assert data["use_openai"] == settings.use_openai
+    assert data["repository_backend"] == settings.repository_backend
 
 
 def test_cors_allows_react_dev_origin() -> None:

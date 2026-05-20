@@ -1,4 +1,9 @@
+from pathlib import Path
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 
 class Settings(BaseSettings):
@@ -10,8 +15,9 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+psycopg://change_me_user:change_me_password@localhost:5432/devblueprint"
     repository_backend: str = "memory"
 
+    # 실행 위치가 backend/ 또는 프로젝트 루트여도 같은 루트 .env를 읽게 합니다.
     # .env에 아직 코드에서 쓰지 않는 값이 있어도 설정 로딩이 실패하지 않게 합니다.
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(env_file=PROJECT_ROOT / ".env", env_file_encoding="utf-8", extra="ignore")
 
     @property
     def frontend_origin_list(self) -> list[str]:

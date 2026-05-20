@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Blocks,
+  Bot,
   Braces,
+  Code2,
   Database,
   Download,
   FileText,
@@ -32,6 +34,17 @@ const IDEA_SUGGESTIONS = [
   "소셜 로그인이 있는 커뮤니티 플랫폼",
   "AI 추천 기반 독서 기록 앱"
 ];
+
+// 기술 스택 카테고리별로 화면에 표시할 대표 아이콘을 연결합니다.
+const TECH_STACK_CATEGORY_ICONS = {
+  Backend: Server,
+  Frontend: Code2,
+  Database,
+  AI: Bot,
+};
+
+// 네트워크가 즉시 실패해도 사용자가 클릭 피드백을 인지할 수 있는 최소 표시 시간입니다.
+const GENERATION_FEEDBACK_MIN_MS = 600;
 
 mermaid.initialize({
   startOnLoad: false,
@@ -101,12 +114,54 @@ function Section({ title, description, children }) {
   );
 }
 
+// 생성 상태 UI가 너무 빨리 사라지지 않도록 남은 대기 시간을 계산합니다.
+function getRemainingFeedbackMs(startedAt) {
+  return Math.max(0, GENERATION_FEEDBACK_MIN_MS - (Date.now() - startedAt));
+}
+
+// 짧은 대기 시간을 Promise로 감싸 생성 흐름의 finally에서도 사용할 수 있게 합니다.
+function wait(ms) {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
+}
+
+// 기술 스택 이름을 아이콘 칩과 함께 렌더링해 목록을 빠르게 훑어볼 수 있게 합니다.
+function TechStackColumn({ title, items }) {
+  const CategoryIcon = TECH_STACK_CATEGORY_ICONS[title] || Blocks;
+
+  return (
+    <div className="stack-column">
+      <div className="stack-column-header">
+        <span className="stack-category-icon">
+          <CategoryIcon size={18} />
+        </span>
+        <strong>{title}</strong>
+      </div>
+      <div className="stack-chip-list">
+        {items.length > 0 ? (
+          items.map((item) => (
+            <span className="stack-chip" key={item}>
+              <Braces size={14} />
+              {item}
+            </span>
+          ))
+        ) : (
+          <span className="stack-chip stack-chip-empty">추천 없음</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function App() {
   const [idea, setIdea] = useState("");
   const [blueprint, setBlueprint] = useState(null);
   const [recentBlueprints, setRecentBlueprints] = useState([]);
   const [selectedBlueprintId, setSelectedBlueprintId] = useState(null);
   const [loading, setLoading] = useState(false);
+  // 설계도 생성 요청 중인지 구분해 홈 입력 패널에 전용 피드백을 표시합니다.
+  const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState("");
 
   const canGenerate = idea.trim().length >= 5 && !loading;
@@ -131,7 +186,9 @@ function App() {
     }
 
     setLoading(true);
+    setIsGenerating(true);
     setError("");
+    const startedAt = Date.now();
 
     try {
       const result = await createBlueprint(idea);
@@ -141,7 +198,9 @@ function App() {
     } catch (err) {
       setError(err.message);
     } finally {
+      await wait(getRemainingFeedbackMs(startedAt));
       setLoading(false);
+      setIsGenerating(false);
     }
   }
 
@@ -285,21 +344,23 @@ function App() {
             <div className="action-row">
               <button className="primary-button" onClick={handleGenerate} disabled={!canGenerate}>
                 {loading ? <Loader2 className="spin" size={18} /> : <Send size={18} />}
-                설계도 생성
+                {isGenerating ? "설계도 생성 중..." : "설계도 생성"}
               </button>
               <p className="action-hint">
                 <Info size={15} />
-                구체적일수록 더 정확한 설계도가 생성돼요
+                {isGenerating ? "AI가 기능, API, DB 구조를 정리하고 있어요" : "구체적일수록 더 정확한 설계도가 생성돼요"}
               </p>
               {error && <p className="error-text">{error}</p>}
             </div>
 
-            <div className="generation-preview">
-              <span>핵심 기능 5개 도출</span>
-              <span>REST API endpoint 설계</span>
-              <span>ERD 및 DB 구조 생성</span>
-              <span>시퀀스 다이어그램 정리</span>
-            </div>
+            {isGenerating ? <GenerationStatus /> : (
+              <div className="generation-preview">
+                <span>핵심 기능 5개 도출</span>
+                <span>REST API endpoint 설계</span>
+                <span>ERD 및 DB 구조 생성</span>
+                <span>시퀀스 다이어그램 정리</span>
+              </div>
+            )}
           </section>
         </section>
 
@@ -342,7 +403,12 @@ function App() {
           </aside>
 
           <div className="result-area">
-            {!blueprint ? (
+            {isGenerating ? (
+              <section className="empty-state generating-state" aria-live="polite">
+                <Loader2 className="spin" size={34} />
+                <p>설계도를 생성하고 있습니다. 잠시만 기다려 주세요.</p>
+              </section>
+            ) : !blueprint ? (
               <section className="empty-state">
                 <FileText size={34} />
                 <p>아이디어를 입력하면 기능, API, DB, 다이어그램 설계도가 여기에 표시됩니다.</p>
@@ -353,6 +419,24 @@ function App() {
           </div>
         </section>
       </main>
+    </div>
+  );
+}
+
+// 생성 대기 시간 동안 사용자가 진행 상황을 체감할 수 있도록 단계별 안내를 보여줍니다.
+function GenerationStatus() {
+  return (
+    <div className="generation-status" aria-live="polite">
+      <div className="generation-status-header">
+        <Loader2 className="spin" size={18} />
+        <strong>설계도 생성 중</strong>
+      </div>
+      <p>아이디어를 분석하고 구현에 필요한 산출물을 차례로 만들고 있어요.</p>
+      <div className="generation-steps">
+        <span>요구사항 분석</span>
+        <span>API 초안 구성</span>
+        <span>DB/ERD 정리</span>
+      </div>
     </div>
   );
 }
@@ -407,12 +491,7 @@ function BlueprintView({ blueprint }) {
                   Database: blueprint.tech_stack.database,
                   AI: blueprint.tech_stack.ai,
                 }).map(([title, items]) => (
-                  <div className="stack-column" key={title}>
-                    <strong>{title}</strong>
-                    {items.map((item) => (
-                      <span key={item}>{item}</span>
-                    ))}
-                  </div>
+                  <TechStackColumn items={items} key={title} title={title} />
                 ))}
               </div>
               <p className="note">{blueprint.tech_stack.rationale}</p>

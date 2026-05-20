@@ -30,6 +30,11 @@ app.include_router(blueprints_router, prefix="/api/v1")
 
 
 @app.get("/health")
-def health_check() -> dict[str, str]:
+def health_check() -> dict[str, str | bool]:
     # 배포 환경이나 로컬 개발 중 서버가 정상적으로 떠 있는지 확인하는 상태 점검용 엔드포인트입니다.
-    return {"status": "ok"}
+    # 민감한 API key 값은 노출하지 않고, 환경 설정 반영 여부만 확인할 수 있게 합니다.
+    return {
+        "status": "ok",
+        "use_openai": settings.use_openai,
+        "repository_backend": settings.repository_backend,
+    }

@@ -48,7 +48,8 @@ button:disabled {
   min-height: 100vh;
   background:
     radial-gradient(circle at 76% 14%, rgba(59, 130, 246, 0.22), transparent 32%),
-    linear-gradient(180deg, #09111f 0%, #0a1220 940px, #eef2f6 940px, #eef2f6 100%);
+    /* 히어로 하단 카드가 밝은 영역에 걸리지 않도록 다크 배경 높이를 넉넉하게 잡습니다. */
+    linear-gradient(180deg, #09111f 0%, #0a1220 1080px, #eef2f6 1080px, #eef2f6 100%);
 }
 
 .app-nav {
@@ -178,7 +179,7 @@ h3 {
   gap: 56px;
   align-items: center;
   min-height: calc(100vh - 104px);
-  padding-bottom: 96px;
+  padding-bottom: 128px;
 }
 
 .hero-copy {
@@ -251,6 +252,8 @@ h3 {
   border-top: 1px solid var(--dark-line);
   max-width: 520px;
   padding-top: 24px;
+  /* 통계와 산출물 카드가 위쪽에 붙어 보이지 않도록 하단 여백을 둡니다. */
+  padding-bottom: 28px;
 }
 
 .hero-stats div {
@@ -270,9 +273,9 @@ h3 {
 
 .artifact-section {
   display: grid;
-  gap: 14px;
+  gap: 22px;
   max-width: 620px;
-  margin-top: 2px;
+  margin-top: 8px;
 }
 
 .section-kicker {
@@ -295,20 +298,20 @@ h3 {
 .artifact-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
+  gap: 16px;
 }
 
 .artifact-card {
   display: grid;
   align-content: start;
-  gap: 10px;
-  min-height: 178px;
+  gap: 14px;
+  min-height: 206px;
   border: 1px solid rgba(125, 167, 255, 0.2);
   border-radius: 14px;
   background:
     linear-gradient(180deg, rgba(38, 55, 87, 0.92), rgba(26, 40, 66, 0.92));
   box-shadow: 0 18px 44px rgba(0, 0, 0, 0.18);
-  padding: 18px;
+  padding: 22px;
 }
 
 .artifact-icon {
@@ -491,6 +494,12 @@ textarea:focus {
   font-weight: 700;
 }
 
+/* 생성 요청 중에도 버튼이 눌린 상태처럼 보이도록 색 대비를 유지합니다. */
+.primary-button:disabled {
+  background: #1d4ed8;
+  color: #dbeafe;
+}
+
 .action-hint {
   display: inline-flex;
   align-items: center;
@@ -619,6 +628,18 @@ textarea:focus {
   text-align: center;
 }
 
+/* 결과 영역에서도 생성 중임을 크게 보여 사용자가 대기 상태를 놓치지 않게 합니다. */
+.generating-state {
+  gap: 12px;
+  color: #2563eb;
+}
+
+.generating-state p {
+  margin: 0;
+  color: #33465f;
+  font-weight: 800;
+}
+
 .generation-preview {
   display: grid;
   gap: 10px;
@@ -640,12 +661,63 @@ textarea:focus {
   color: var(--green);
 }
 
+/* 홈 입력 카드 안에 생성 진행 상황을 표시하는 전용 상태 박스입니다. */
+.generation-status {
+  display: grid;
+  gap: 12px;
+  margin-top: 18px;
+  border: 1px solid rgba(96, 165, 250, 0.38);
+  border-radius: 12px;
+  background: rgba(37, 99, 235, 0.14);
+  padding: 16px;
+}
+
+.generation-status-header {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: #dbeafe;
+}
+
+.generation-status-header svg {
+  color: #60a5fa;
+}
+
+.generation-status p {
+  margin: 0;
+  color: #aebfda;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.generation-steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.generation-steps span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.32);
+  color: #d8e6ff;
+  font-size: 12px;
+  font-weight: 800;
+  text-align: center;
+}
+
 .app-board {
   display: grid;
   grid-template-columns: 300px minmax(0, 1fr);
   gap: 18px;
   align-items: start;
-  padding-top: 24px;
+  /* 히어로와 결과 보드 사이에 숨 쉴 공간을 만들어 배경 경계에 카드가 걸리지 않게 합니다. */
+  margin-top: 0;
+  padding-top: 14px;
 }
 
 .recent-panel {
@@ -654,7 +726,7 @@ textarea:focus {
   border: 1px solid var(--line);
   border-radius: 14px;
   background: var(--surface);
-  box-shadow: 0 16px 35px rgba(15, 23, 42, 0.06);
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
   padding: 16px;
 }
 
@@ -667,6 +739,7 @@ textarea:focus {
 
 .panel-heading h2 {
   margin: 0;
+  color: var(--text);
 }
 
 .result-area {
@@ -676,7 +749,7 @@ textarea:focus {
 .result-layout {
   display: grid;
   gap: 14px;
-  margin-top: 16px;
+  margin-top: 0;
 }
 
 .result-tabs {
@@ -720,6 +793,8 @@ textarea:focus {
 .section {
   padding: 0;
   overflow: hidden;
+  /* 밝은 결과 카드 안에서는 전역 다크 히어로 글자색을 상속받지 않게 합니다. */
+  color: var(--text);
 }
 
 .section-heading {
@@ -866,13 +941,13 @@ textarea:focus {
 .stack-column {
   display: grid;
   align-content: start;
-  gap: 8px;
-  border-bottom: 1px solid #e6e9ee;
-  padding: 13px 18px;
+  gap: 12px;
+  border-right: 1px solid #e6e9ee;
+  padding: 16px 18px;
 }
 
 .stack-column:last-child {
-  border-bottom: 0;
+  border-right: 0;
 }
 
 .result-aside .stack-grid {
@@ -883,11 +958,60 @@ textarea:focus {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
-.stack-column span {
-  border-radius: 5px;
-  background: #eef1f5;
-  padding: 6px 8px;
+.stack-column-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+/* 기술 스택 영역의 제목과 태그가 흰 배경 위에서 또렷하게 보이도록 합니다. */
+.stack-column-header strong {
+  color: #17202a;
+  font-size: 15px;
+}
+
+.stack-category-icon {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  border: 1px solid #cfe0f5;
+  border-radius: 8px;
+  background: #eef5ff;
+  color: #2563eb;
+}
+
+.stack-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.stack-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  border: 1px solid #d6e0ea;
+  border-radius: 999px;
+  background: #f7f9fc;
+  color: #24364b;
+  padding: 7px 10px;
   font-size: 13px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.stack-chip svg {
+  flex: 0 0 auto;
+  color: #64748b;
+}
+
+.stack-chip-empty {
+  color: #7b8aa0;
+  font-weight: 600;
 }
 
 .note {
@@ -1231,7 +1355,7 @@ th {
 @media (max-width: 900px) {
   .app-shell {
     background:
-      linear-gradient(180deg, #09111f 0%, #0a1220 980px, #eef2f6 980px, #eef2f6 100%);
+      linear-gradient(180deg, #09111f 0%, #0a1220 1180px, #eef2f6 1180px, #eef2f6 100%);
   }
 
   .workspace {
@@ -1280,6 +1404,10 @@ th {
     flex-direction: column;
   }
 
+  .generation-steps {
+    grid-template-columns: 1fr;
+  }
+
   .summary-metrics {
     width: 100%;
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1297,6 +1425,15 @@ th {
 
   .stack-grid-wide {
     grid-template-columns: 1fr;
+  }
+
+  .stack-column {
+    border-right: 0;
+    border-bottom: 1px solid #e6e9ee;
+  }
+
+  .stack-column:last-child {
+    border-bottom: 0;
   }
 
   .result-aside {
