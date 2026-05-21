@@ -1,4 +1,4 @@
-﻿from app.core.config import settings
+from app.core.config import settings
 from app.repositories.blueprint_repository import StoredBlueprint, blueprint_repository
 from app.schemas.blueprint import (
     ApiField,
@@ -35,19 +35,19 @@ REVISION_STOPWORDS = {
 
 
 class DuplicateBlueprintRevisionError(RuntimeError):
-    """?대? 諛섏쁺???섏젙 ?붿껌???ㅼ떆 ?앹꽦?섏? ?딅룄濡??뚮젮二쇰뒗 ?덉쇅?낅땲??"""
+    """이미 반영된 수정 요청을 다시 생성하지 않도록 알려주는 예외입니다."""
 
 
 def generate_blueprint(payload: BlueprintRequest) -> BlueprintResponse:
-    """?쒕퉬???꾩씠?붿뼱瑜?諛쏆븘 ?쒖뒪???ㅺ퀎???묐떟???앹꽦?⑸땲??"""
+    """서비스 아이디어를 받아 시스템 설계도 응답을 생성합니다."""
     cache_key = build_cache_key(payload.idea)
 
     cached_blueprint = blueprint_repository.get(cache_key)
     if cached_blueprint is not None:
         return cached_blueprint
 
-    # USE_OPENAI=false?대㈃ API key媛 ?덈뜑?쇰룄 ?ㅼ젣 OpenAI ?몄텧???섏? ?딆뒿?덈떎.
-    # 媛쒕컻 以??붾㈃ ?뺤씤?대굹 諛섎났 ?뚯뒪?몃? ?????좏겙 鍮꾩슜??留됯린 ?꾪븳 ?덉쟾?μ튂?낅땲??
+    # USE_OPENAI=false이면 API key가 있어도 실제 OpenAI 호출을 하지 않습니다.
+    # 개발 중 화면 확인이나 반복 테스트 시 불필요한 토큰 비용을 막기 위한 안전장치입니다.
     if not settings.use_openai:
         blueprint = build_placeholder_blueprint(payload)
     else:
@@ -60,7 +60,7 @@ def generate_blueprint(payload: BlueprintRequest) -> BlueprintResponse:
 
 
 def revise_blueprint(idea: str, current_blueprint: BlueprintResponse, instruction: str) -> StoredBlueprint:
-    """湲곗〈 ?ㅺ퀎?꾩? ?ъ슜???섏젙 ?붿껌??諛뷀깢?쇰줈 寃利?媛?ν븳 ???ㅺ퀎?꾨? ?앹꽦?⑸땲??"""
+    """기존 설계도와 사용자의 수정 요청을 바탕으로 검증 가능한 새 설계도를 생성합니다."""
     base_idea = strip_revision_suffix(idea)
     revision_instruction = instruction.strip()
     revision_cache_key = build_revision_cache_key(base_idea, revision_instruction)
@@ -84,7 +84,7 @@ def revise_blueprint(idea: str, current_blueprint: BlueprintResponse, instructio
 
 
 def generate_blueprint_with_retry(user_prompt: str) -> BlueprintResponse:
-    """?덉쭏 寃利앹뿉 ?ㅽ뙣??OpenAI 寃곌낵瑜?feedback怨??④퍡 ?ъ깮?깊빀?덈떎."""
+    """품질 검증에 실패한 OpenAI 결과를 feedback과 함께 재생성합니다."""
     validation_feedback: list[str] | None = None
     last_errors: list[str] = []
 
@@ -103,18 +103,18 @@ def generate_blueprint_with_retry(user_prompt: str) -> BlueprintResponse:
 
 
 def normalize_idea(idea: str) -> str:
-    """媛숈? ?섎???諛섎났 ?낅젰??理쒕???媛숈? cache key濡?臾띔린 ?꾪빐 怨듬갚???뺣━?⑸땲??"""
+    """같은 의미의 반복 입력을 최대한 같은 cache key로 묶기 위해 공백을 정리합니다."""
     return " ".join(idea.strip().split()).lower()
 
 
 def build_cache_key(idea: str) -> str:
-    """OpenAI ?ъ슜 ?щ?? 紐⑤뜽???ㅻⅨ 寃곌낵媛 媛숈? 罹먯떆???욎씠吏 ?딅룄濡?cache key瑜?留뚮벊?덈떎."""
+    """OpenAI 사용 여부나 모델이 다른 결과가 같은 캐시에 섞이지 않도록 cache key를 만듭니다."""
     source = "openai" if settings.use_openai else "placeholder"
     return f"{source}:{settings.openai_model}:{BLUEPRINT_PROMPT_VERSION}:{normalize_idea(idea)}"
 
 
 def build_revision_cache_key(idea: str, instruction: str) -> str:
-    """媛숈? ?먮낯 ?꾩씠?붿뼱?쇰룄 ?섏젙 ?붿껌蹂꾨줈 蹂꾨룄 ??λ낯???⑤룄濡?revision cache key瑜?留뚮벊?덈떎."""
+    """같은 원본 아이디어라도 수정 요청별로 별도 저장본을 두도록 revision cache key를 만듭니다."""
     source = "openai" if settings.use_openai else "placeholder"
     normalized_source = normalize_idea(f"{idea} {instruction}")
     return f"{source}:{settings.openai_model}:{BLUEPRINT_PROMPT_VERSION}:revision:{normalized_source}"
