@@ -101,8 +101,6 @@ def validate_api_fields(blueprint: BlueprintResponse, errors: list[str]) -> None
                 errors.append(f"api field name must not be empty: {api.method} {api.path}")
             if not field.type.strip():
                 errors.append(f"api field type must not be empty: {api.method} {api.path}.{field.name}")
-            if len(field.description.strip()) < 10:
-                errors.append(f"api field description is too short: {api.method} {api.path}.{field.name}")
 
 
 def validate_database_names(blueprint: BlueprintResponse, errors: list[str]) -> None:
@@ -143,8 +141,9 @@ def validate_database_erd(blueprint: BlueprintResponse, errors: list[str]) -> No
         errors.append("database_erd must start with 'erDiagram'")
         return
 
+    normalized_erd = erd.lower()
     table_names = {table.name for table in blueprint.database_schema}
-    missing_tables = sorted(table_name for table_name in table_names if table_name not in erd)
+    missing_tables = sorted(table_name for table_name in table_names if table_name.lower() not in normalized_erd)
 
     for table_name in missing_tables:
         errors.append(f"database_erd must include table from database_schema: {table_name}")

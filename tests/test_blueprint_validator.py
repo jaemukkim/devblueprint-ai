@@ -138,6 +138,14 @@ def test_validate_blueprint_quality_rejects_generic_api_resource() -> None:
         validate_blueprint_quality(blueprint)
 
 
+def test_validate_blueprint_quality_accepts_short_api_field_description() -> None:
+    blueprint = make_valid_blueprint()
+    blueprint.api_spec[0].request[0].name = "title"
+    blueprint.api_spec[0].request[0].description = "제목"
+
+    validate_blueprint_quality(blueprint)
+
+
 def test_validate_blueprint_quality_rejects_generic_feature_name() -> None:
     blueprint = make_valid_blueprint()
     blueprint.features[0].name = "아이디어 분석"
@@ -190,6 +198,17 @@ def test_validate_blueprint_quality_rejects_erd_missing_schema_table() -> None:
 
     with pytest.raises(BlueprintGenerationError, match="database_erd must include table"):
         validate_blueprint_quality(blueprint)
+
+
+def test_validate_blueprint_quality_accepts_uppercase_erd_table_names() -> None:
+    blueprint = make_valid_blueprint()
+    blueprint.database_erd = (
+        "erDiagram\n"
+        "  TEST_ITEMS ||--o{ TEST_ITEM_EVENTS : has\n"
+        "  TEST_ITEMS ||--o{ TEST_ITEM_RESULTS : has"
+    )
+
+    validate_blueprint_quality(blueprint)
 
 
 def test_validate_blueprint_quality_rejects_invalid_sequence_diagram() -> None:

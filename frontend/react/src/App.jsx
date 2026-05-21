@@ -335,8 +335,8 @@ function App() {
 
             <div className="hero-stats">
               <div>
-                <strong>2.4s</strong>
-                <span>평균 생성 시간</span>
+                <strong>30~60s</strong>
+                <span>품질 생성 예상</span>
               </div>
               <div>
                 <strong>5가지</strong>
