@@ -12,12 +12,14 @@ import {
   Info,
   LayoutGrid,
   Loader2,
+  MessageCircle,
   Network,
   RefreshCw,
   Send,
   Server,
   Sparkles,
   Trash2,
+  X,
 } from "lucide-react";
 import mermaid from "mermaid";
 
@@ -190,6 +192,8 @@ function App() {
   const [generationStepIndex, setGenerationStepIndex] = useState(0);
   // 상단 메뉴와 결과 탭이 같은 선택 상태를 공유하도록 관리합니다.
   const [activeResultTab, setActiveResultTab] = useState("summary");
+  // 설계 보조 챗 위젯의 열림/닫힘 상태를 관리합니다.
+  const [isChatOpen, setIsChatOpen] = useState(false);
   const [error, setError] = useState("");
 
   const canGenerate = idea.trim().length >= 5 && !loading;
@@ -470,6 +474,12 @@ function App() {
           </div>
         </section>
       </main>
+
+      <BlueprintAssistantChat
+        blueprint={blueprint}
+        isOpen={isChatOpen}
+        onToggle={() => setIsChatOpen((current) => !current)}
+      />
     </div>
   );
 }
@@ -682,6 +692,73 @@ function QualityChecks({ items }) {
         ))}
       </div>
     </section>
+  );
+}
+
+// 설계도 결과를 보면서 바로 수정 요청을 남길 수 있는 플로팅 챗 위젯입니다.
+function BlueprintAssistantChat({ blueprint, isOpen, onToggle }) {
+  const quickPrompts = [
+    "관리자 기능 추가해줘",
+    "DB 구조를 더 현실적으로 나눠줘",
+    "API 설명을 더 구체화해줘",
+  ];
+
+  return (
+    <aside className={isOpen ? "assistant-chat open" : "assistant-chat"} aria-label="설계 보조 챗">
+      {isOpen && (
+        <section className="assistant-chat-panel">
+          <div className="assistant-chat-header">
+            <span className="assistant-bot-mark">
+              <Bot size={22} />
+            </span>
+            <div>
+              <strong>DevBlueprint Bot</strong>
+              <small>{blueprint ? "현재 설계도 개선 준비됨" : "설계도 생성 후 수정 가능"}</small>
+            </div>
+            <button type="button" onClick={onToggle} aria-label="설계 보조 챗 닫기">
+              <X size={18} />
+            </button>
+          </div>
+
+          <div className="assistant-chat-body">
+            <div className="assistant-message bot">
+              <p>
+                생성된 설계도를 보면서 기능, API, DB, 다이어그램을 어떻게 바꾸고 싶은지 알려주세요.
+              </p>
+            </div>
+
+            <div className="assistant-quick-prompts" aria-label="빠른 수정 요청 예시">
+              {quickPrompts.map((prompt) => (
+                <button type="button" key={prompt} disabled={!blueprint}>
+                  {prompt}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <form className="assistant-chat-input" onSubmit={(event) => event.preventDefault()}>
+            <input
+              aria-label="설계도 수정 요청"
+              disabled={!blueprint}
+              placeholder={blueprint ? "수정 요청을 입력하세요" : "먼저 설계도를 생성하세요"}
+              type="text"
+            />
+            <button type="submit" disabled={!blueprint} aria-label="수정 요청 보내기">
+              <Send size={17} />
+            </button>
+          </form>
+        </section>
+      )}
+
+      <button
+        className={isOpen ? "assistant-chat-button active" : "assistant-chat-button"}
+        type="button"
+        onClick={onToggle}
+        aria-label={isOpen ? "설계 보조 챗 닫기" : "설계 보조 챗 열기"}
+      >
+        {isOpen ? <MessageCircle size={24} /> : <Bot size={25} />}
+      </button>
+    </aside>
   );
 }
 

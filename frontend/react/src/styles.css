@@ -31,6 +31,7 @@ body {
 }
 
 button,
+input,
 textarea {
   font: inherit;
 }
@@ -933,6 +934,188 @@ textarea:focus {
   font-weight: 700;
 }
 
+/* 설계도 수정 요청을 바로 열 수 있도록 화면 우하단에 고정되는 챗 위젯입니다. */
+.assistant-chat {
+  position: fixed;
+  right: 28px;
+  bottom: 28px;
+  z-index: 40;
+  display: grid;
+  justify-items: end;
+  gap: 12px;
+  pointer-events: none;
+}
+
+/* 작은 메시지 창은 결과 화면을 가리지 않도록 폭을 제한하고 그림자를 깊게 줍니다. */
+.assistant-chat-panel {
+  width: min(360px, calc(100vw - 36px));
+  overflow: hidden;
+  border: 1px solid rgba(96, 165, 250, 0.34);
+  border-radius: 16px;
+  background: #ffffff;
+  box-shadow: 0 28px 70px rgba(9, 17, 31, 0.28);
+  color: var(--text);
+  pointer-events: auto;
+}
+
+.assistant-chat-header {
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr) 34px;
+  gap: 12px;
+  align-items: center;
+  border-bottom: 1px solid #dbe4f0;
+  background:
+    radial-gradient(circle at 18% 16%, rgba(96, 165, 250, 0.32), transparent 34%),
+    linear-gradient(135deg, #0b1730, #123b82);
+  padding: 14px;
+  color: #ffffff;
+}
+
+.assistant-bot-mark,
+.assistant-chat-button {
+  display: inline-grid;
+  place-items: center;
+  color: #ffffff;
+}
+
+.assistant-bot-mark {
+  width: 46px;
+  height: 46px;
+  border: 1px solid rgba(191, 219, 254, 0.5);
+  border-radius: 14px;
+  background: linear-gradient(135deg, #38bdf8, #2563eb);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28);
+}
+
+.assistant-chat-header strong,
+.assistant-chat-header small {
+  display: block;
+  min-width: 0;
+}
+
+.assistant-chat-header strong {
+  font-size: 15px;
+}
+
+.assistant-chat-header small {
+  margin-top: 3px;
+  color: #bdd7ff;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.assistant-chat-header button {
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid rgba(191, 219, 254, 0.28);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+}
+
+.assistant-chat-body {
+  display: grid;
+  gap: 14px;
+  padding: 14px;
+  background: #f8fbff;
+}
+
+.assistant-message {
+  border: 1px solid #dbe8ff;
+  border-radius: 12px;
+  background: #ffffff;
+  padding: 12px;
+}
+
+.assistant-message p {
+  margin: 0;
+  color: #33465f;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.assistant-quick-prompts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.assistant-quick-prompts button {
+  border: 1px solid #cfe0ff;
+  border-radius: 999px;
+  background: #eef5ff;
+  color: #1d4ed8;
+  padding: 7px 10px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.assistant-quick-prompts button:disabled {
+  color: #8ea2c0;
+  background: #f2f5f9;
+}
+
+.assistant-chat-input {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 42px;
+  gap: 8px;
+  border-top: 1px solid #dbe4f0;
+  background: #ffffff;
+  padding: 12px;
+}
+
+.assistant-chat-input input {
+  min-width: 0;
+  height: 42px;
+  border: 1px solid #cbd7e6;
+  border-radius: 10px;
+  padding: 0 12px;
+  color: var(--text);
+}
+
+.assistant-chat-input input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+  outline: none;
+}
+
+.assistant-chat-input button {
+  display: inline-grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border: 1px solid #2563eb;
+  border-radius: 10px;
+  background: #2563eb;
+  color: #ffffff;
+}
+
+.assistant-chat-button {
+  width: 62px;
+  height: 62px;
+  border: 1px solid rgba(147, 197, 253, 0.68);
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at 30% 24%, rgba(255, 255, 255, 0.38), transparent 20%),
+    linear-gradient(135deg, #38bdf8, #2563eb 58%, #1d4ed8);
+  box-shadow: 0 20px 44px rgba(37, 99, 235, 0.34);
+  pointer-events: auto;
+  transition:
+    transform 0.16s ease,
+    box-shadow 0.16s ease;
+}
+
+.assistant-chat-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 24px 52px rgba(37, 99, 235, 0.42);
+}
+
+.assistant-chat-button.active {
+  border-radius: 999px;
+}
+
 .metric {
   display: grid;
   gap: 3px;
@@ -1518,6 +1701,17 @@ th {
 
   .quality-grid {
     grid-template-columns: 1fr;
+  }
+
+  .assistant-chat {
+    right: 18px;
+    bottom: 18px;
+  }
+
+  .assistant-chat-button {
+    width: 56px;
+    height: 56px;
+    border-radius: 16px;
   }
 
   .result-tabs {
