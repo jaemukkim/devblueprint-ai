@@ -38,6 +38,13 @@ export function getBlueprint(id) {
   return requestJson(`/api/v1/blueprints/${id}`);
 }
 
+export function reviseBlueprint(id, instruction) {
+  return requestJson(`/api/v1/blueprints/${id}/revise`, {
+    method: "POST",
+    body: JSON.stringify({ instruction }),
+  });
+}
+
 export function deleteBlueprint(id) {
   return requestJson(`/api/v1/blueprints/${id}`, {
     method: "DELETE",

@@ -1,4 +1,4 @@
-from app.schemas.blueprint import BlueprintRequest
+from app.schemas.blueprint import BlueprintRequest, BlueprintResponse
 
 
 BLUEPRINT_PROMPT_VERSION = "quality-v3"
@@ -54,4 +54,28 @@ For each API endpoint, include realistic request and response fields that a fron
 For each database table, include columns that support the proposed APIs and features.
 Use resource names that clearly reveal the product domain, such as books, reading_logs, reservations, chat_rooms, posts, or trades.
 Avoid one-column tables and avoid API endpoints that cannot be mapped to any feature or table.
+"""
+
+
+def build_blueprint_revision_prompt(
+    idea: str,
+    current_blueprint: BlueprintResponse,
+    instruction: str,
+) -> str:
+    """기존 설계도와 수정 요청을 함께 전달해 전체 설계도를 일관되게 재작성하도록 지시합니다."""
+    return f"""
+Revise the existing system blueprint according to the user's instruction.
+
+Original service idea:
+{idea.strip()}
+
+User revision instruction:
+{instruction.strip()}
+
+Current blueprint JSON:
+{current_blueprint.model_dump_json(indent=2)}
+
+Return the full revised blueprint, not a partial patch.
+Keep any useful parts of the current blueprint, but update every affected feature, API endpoint, database table, ERD relationship, and sequence step so the final result is internally consistent.
+Do not mention that this is a revision in the overview unless it helps explain the service.
 """

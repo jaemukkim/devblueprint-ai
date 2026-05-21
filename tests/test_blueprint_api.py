@@ -63,7 +63,7 @@ def test_generate_blueprint_reuses_cached_result(monkeypatch) -> None:
     monkeypatch.setattr(settings, "use_openai", False)
     blueprint_repository.clear()
 
-    payload = {"idea": "  스포츠   야구 분석 및 승부 예측 서비스  "}
+    payload = {"idea": "  스포츠  야구 분석 및 승부 예측 서비스  "}
     first_response = client.post("/api/v1/blueprint/generate", json=payload)
     second_response = client.post(
         "/api/v1/blueprint/generate",
@@ -82,7 +82,7 @@ def test_list_blueprints_returns_saved_blueprint_summary(monkeypatch) -> None:
 
     create_response = client.post(
         "/api/v1/blueprint/generate",
-        json={"idea": "개인 학습 기록을 분석하는 AI 플래너"},
+        json={"idea": "개인 학습 기록을 분석하는 AI 플랫폼"},
     )
     list_response = client.get("/api/v1/blueprints")
 
@@ -92,7 +92,7 @@ def test_list_blueprints_returns_saved_blueprint_summary(monkeypatch) -> None:
     items = list_response.json()["items"]
     assert len(items) == 1
     assert items[0]["id"]
-    assert items[0]["idea"] == "개인 학습 기록을 분석하는 AI 플래너"
+    assert items[0]["idea"] == "개인 학습 기록을 분석하는 AI 플랫폼"
     assert items[0]["created_at"]
 
 
@@ -120,6 +120,64 @@ def test_get_blueprint_returns_404_when_missing() -> None:
     blueprint_repository.clear()
 
     response = client.get("/api/v1/blueprints/missing-blueprint-id")
+
+    assert response.status_code == 404
+
+
+def test_revise_blueprint_creates_new_saved_blueprint(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "use_openai", False)
+    blueprint_repository.clear()
+
+    create_response = client.post(
+        "/api/v1/blueprint/generate",
+        json={"idea": "팀 회고 내용을 분석하는 협업 서비스"},
+    )
+    blueprint_id = client.get("/api/v1/blueprints").json()["items"][0]["id"]
+    revise_response = client.post(
+        f"/api/v1/blueprints/{blueprint_id}/revise",
+        json={"instruction": "관리자용 통계 기능을 추가해줘"},
+    )
+
+    assert create_response.status_code == 200
+    assert revise_response.status_code == 200
+
+    data = revise_response.json()
+    assert data["id"] != blueprint_id
+    assert data["idea"] == "팀 회고 내용을 분석하는 협업 서비스"
+    assert "관리자용 통계 기능을 추가해줘" in data["result"]["overview"]
+    assert blueprint_repository.count() == 2
+
+
+def test_revise_blueprint_rejects_duplicate_instruction(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "use_openai", False)
+    blueprint_repository.clear()
+
+    client.post(
+        "/api/v1/blueprint/generate",
+        json={"idea": "카페 공유 커뮤니티 서비스"},
+    )
+    blueprint_id = client.get("/api/v1/blueprints").json()["items"][0]["id"]
+    first_response = client.post(
+        f"/api/v1/blueprints/{blueprint_id}/revise",
+        json={"instruction": "관리자 기능 추가해줘"},
+    )
+    second_response = client.post(
+        f"/api/v1/blueprints/{blueprint_id}/revise",
+        json={"instruction": "관리자 기능 추가해줘"},
+    )
+
+    assert first_response.status_code == 200
+    assert second_response.status_code == 409
+    assert blueprint_repository.count() == 2
+
+
+def test_revise_blueprint_returns_404_when_missing() -> None:
+    blueprint_repository.clear()
+
+    response = client.post(
+        "/api/v1/blueprints/missing-blueprint-id/revise",
+        json={"instruction": "관리자 기능을 추가해줘"},
+    )
 
     assert response.status_code == 404
 

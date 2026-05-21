@@ -12,6 +12,11 @@ class BlueprintRequest(BaseModel):
 
 # 생성된 설계도에 포함될 핵심 기능 단위입니다.
 # priority는 UI 정렬이나 강조 표시 기준으로 사용할 수 있도록 허용 값을 제한합니다.
+# 저장된 설계도를 사용자의 추가 요청에 맞게 다시 다듬을 때 사용하는 요청 모델입니다.
+class BlueprintRevisionRequest(BaseModel):
+    instruction: str = Field(..., min_length=5, description="설계도를 어떻게 수정할지 설명한 요청입니다.")
+
+
 class Feature(BaseModel):
     name: str
     description: str

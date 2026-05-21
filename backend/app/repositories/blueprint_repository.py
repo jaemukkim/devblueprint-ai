@@ -32,7 +32,11 @@ class BlueprintRepository(ABC):
         """cache key에 해당하는 설계도 결과를 조회합니다."""
 
     @abstractmethod
-    def save(self, key: str, blueprint: BlueprintResponse, idea: str | None = None) -> None:
+    def get_stored_by_key(self, key: str) -> StoredBlueprint | None:
+        """cache key에 해당하는 저장 설계도의 메타데이터와 결과를 함께 조회합니다."""
+
+    @abstractmethod
+    def save(self, key: str, blueprint: BlueprintResponse, idea: str | None = None) -> StoredBlueprint:
         """cache key와 설계도 결과를 저장합니다."""
 
     @abstractmethod
@@ -68,20 +72,28 @@ class InMemoryBlueprintRepository(BlueprintRepository):
             return None
         return deepcopy(stored_blueprint.result)
 
-    def save(self, key: str, blueprint: BlueprintResponse, idea: str | None = None) -> None:
+    def get_stored_by_key(self, key: str) -> StoredBlueprint | None:
+        stored_blueprint = self._items.get(key)
+        if stored_blueprint is None:
+            return None
+        return deepcopy(stored_blueprint)
+
+    def save(self, key: str, blueprint: BlueprintResponse, idea: str | None = None) -> StoredBlueprint:
         stored_blueprint = self._items.get(key)
 
         if stored_blueprint is None:
-            self._items[key] = StoredBlueprint(
+            stored_blueprint = StoredBlueprint(
                 id=str(uuid4()),
                 idea=idea or key,
                 result=deepcopy(blueprint),
                 created_at=datetime.now(timezone.utc),
             )
-            return
+            self._items[key] = stored_blueprint
+            return deepcopy(stored_blueprint)
 
         stored_blueprint.idea = idea or stored_blueprint.idea
         stored_blueprint.result = deepcopy(blueprint)
+        return deepcopy(stored_blueprint)
 
     def get_by_id(self, blueprint_id: str) -> StoredBlueprint | None:
         for stored_blueprint in self._items.values():
@@ -127,6 +139,15 @@ class PostgresBlueprintRepository(BlueprintRepository):
 
             return BlueprintResponse.model_validate(blueprint_model.result)
 
+    def get_stored_by_key(self, key: str) -> StoredBlueprint | None:
+        with self._session_factory() as db:
+            blueprint_model = db.scalar(select(BlueprintModel).where(BlueprintModel.cache_key == key))
+
+            if blueprint_model is None:
+                return None
+
+            return self._to_stored_blueprint(blueprint_model)
+
     def get_by_id(self, blueprint_id: str) -> StoredBlueprint | None:
         if not is_valid_uuid(blueprint_id):
             return None
@@ -161,7 +182,7 @@ class PostgresBlueprintRepository(BlueprintRepository):
             db.commit()
             return True
 
-    def save(self, key: str, blueprint: BlueprintResponse, idea: str | None = None) -> None:
+    def save(self, key: str, blueprint: BlueprintResponse, idea: str | None = None) -> StoredBlueprint:
         with self._session_factory() as db:
             blueprint_model = db.scalar(select(BlueprintModel).where(BlueprintModel.cache_key == key))
             result = blueprint.model_dump(mode="json")
@@ -179,6 +200,8 @@ class PostgresBlueprintRepository(BlueprintRepository):
                 blueprint_model.result = result
 
             db.commit()
+            db.refresh(blueprint_model)
+            return self._to_stored_blueprint(blueprint_model)
 
     def clear(self) -> None:
         with self._session_factory() as db:

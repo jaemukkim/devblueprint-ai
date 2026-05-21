@@ -23,7 +23,7 @@ import {
 } from "lucide-react";
 import mermaid from "mermaid";
 
-import { createBlueprint, deleteBlueprint, getBlueprint, listBlueprints } from "./api.js";
+import { createBlueprint, deleteBlueprint, getBlueprint, listBlueprints, reviseBlueprint } from "./api.js";
 import { downloadMarkdown } from "./markdown.js";
 
 const SAMPLE_IDEAS = [
@@ -65,6 +65,14 @@ const GENERATION_STEPS = [
 ];
 
 // 네트워크가 즉시 실패해도 사용자가 클릭 피드백을 인지할 수 있는 최소 표시 시간입니다.
+// 챗봇으로 설계도 수정 요청을 보냈을 때 사용자에게 보여줄 진행 단계입니다.
+const REVISION_STEPS = [
+  "수정 요청 접수",
+  "기존 설계도 분석",
+  "변경 영향 반영",
+  "품질 검증 중",
+];
+
 const GENERATION_FEEDBACK_MIN_MS = 600;
 
 mermaid.initialize({
@@ -153,6 +161,11 @@ function scrollToSection(id) {
 }
 
 // 기술 스택 이름을 아이콘 칩과 함께 렌더링해 목록을 빠르게 훑어볼 수 있게 합니다.
+// 저장명에 과거 수정 문구가 섞여 있더라도 입력창에는 원본 서비스 아이디어만 보여줍니다.
+function getBaseIdea(ideaText) {
+  return ideaText.split("수정:", 1)[0].replace("·", "").trim();
+}
+
 function TechStackColumn({ title, items }) {
   const CategoryIcon = TECH_STACK_CATEGORY_ICONS[title] || Blocks;
 
@@ -188,6 +201,8 @@ function App() {
   const [loading, setLoading] = useState(false);
   // 설계도 생성 요청 중인지 구분해 홈 입력 패널에 전용 피드백을 표시합니다.
   const [isGenerating, setIsGenerating] = useState(false);
+  // 챗봇 수정 요청이 진행 중인지 구분해 입력창과 버튼 상태를 제어합니다.
+  const [isRevising, setIsRevising] = useState(false);
   // 긴 생성 시간 동안 현재 어느 단계처럼 보일지 관리합니다.
   const [generationStepIndex, setGenerationStepIndex] = useState(0);
   // 상단 메뉴와 결과 탭이 같은 선택 상태를 공유하도록 관리합니다.
@@ -200,12 +215,14 @@ function App() {
 
   const selectedIdea = useMemo(() => {
     const selected = recentBlueprints.find((item) => item.id === selectedBlueprintId);
-    return selected?.idea || idea;
+    return getBaseIdea(selected?.idea || idea);
   }, [idea, recentBlueprints, selectedBlueprintId]);
 
   async function refreshRecent() {
     const response = await listBlueprints();
-    setRecentBlueprints(response.items || []);
+    const items = response.items || [];
+    setRecentBlueprints(items);
+    return items;
   }
 
   useEffect(() => {
@@ -241,9 +258,10 @@ function App() {
     try {
       const result = await createBlueprint(idea);
       setBlueprint(result);
-      setSelectedBlueprintId(null);
       setActiveResultTab("summary");
-      await refreshRecent();
+      const items = await refreshRecent();
+      const savedBlueprint = items.find((item) => item.idea.trim() === idea.trim());
+      setSelectedBlueprintId(savedBlueprint?.id || null);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -260,7 +278,7 @@ function App() {
     try {
       const stored = await getBlueprint(id);
       setBlueprint(stored.result);
-      setIdea(stored.idea);
+      setIdea(getBaseIdea(stored.idea));
       setSelectedBlueprintId(stored.id);
       setActiveResultTab("summary");
     } catch (err) {
@@ -292,6 +310,30 @@ function App() {
   function handleResultNav(tabId) {
     setActiveResultTab(tabId);
     scrollToSection("result");
+  }
+
+  async function handleReviseBlueprint(instruction) {
+    if (!selectedBlueprintId || isRevising) {
+      return;
+    }
+
+    setIsRevising(true);
+    setError("");
+
+    try {
+      const revised = await reviseBlueprint(selectedBlueprintId, instruction);
+      setBlueprint(revised.result);
+      setIdea(getBaseIdea(revised.idea));
+      setSelectedBlueprintId(revised.id);
+      setActiveResultTab("summary");
+      await refreshRecent();
+      scrollToSection("result");
+    } catch (err) {
+      setError(err.message);
+      throw err;
+    } finally {
+      setIsRevising(false);
+    }
   }
 
   return (
@@ -477,7 +519,10 @@ function App() {
 
       <BlueprintAssistantChat
         blueprint={blueprint}
+        canRevise={Boolean(selectedBlueprintId)}
         isOpen={isChatOpen}
+        isRevising={isRevising}
+        onRevise={handleReviseBlueprint}
         onToggle={() => setIsChatOpen((current) => !current)}
       />
     </div>
@@ -696,12 +741,55 @@ function QualityChecks({ items }) {
 }
 
 // 설계도 결과를 보면서 바로 수정 요청을 남길 수 있는 플로팅 챗 위젯입니다.
-function BlueprintAssistantChat({ blueprint, isOpen, onToggle }) {
+function BlueprintAssistantChat({ blueprint, canRevise, isOpen, isRevising, onRevise, onToggle }) {
+  const [message, setMessage] = useState("");
+  const [chatStatus, setChatStatus] = useState("");
+  const [pendingInstruction, setPendingInstruction] = useState("");
+  const [revisionStepIndex, setRevisionStepIndex] = useState(0);
   const quickPrompts = [
     "관리자 기능 추가해줘",
     "DB 구조를 더 현실적으로 나눠줘",
     "API 설명을 더 구체화해줘",
   ];
+  const isDisabled = !blueprint || !canRevise || isRevising;
+
+  useEffect(() => {
+    if (!isRevising) {
+      setRevisionStepIndex(0);
+      return undefined;
+    }
+
+    const intervalId = window.setInterval(() => {
+      setRevisionStepIndex((currentIndex) => Math.min(currentIndex + 1, REVISION_STEPS.length - 1));
+    }, 3500);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [isRevising]);
+
+  // 사용자의 수정 요청을 부모 컴포넌트의 API 연결 함수로 넘기고 입력 상태를 정리합니다.
+  async function submitRevision(instruction) {
+    const trimmedInstruction = instruction.trim();
+
+    if (!trimmedInstruction || isDisabled) {
+      return;
+    }
+
+    setChatStatus("");
+    setPendingInstruction(trimmedInstruction);
+
+    try {
+      await onRevise(trimmedInstruction);
+      setMessage("");
+      setPendingInstruction("");
+      setChatStatus("수정 요청을 반영했습니다.");
+    } catch (err) {
+      setChatStatus(err.message);
+    } finally {
+      setPendingInstruction("");
+    }
+  }
 
   return (
     <aside className={isOpen ? "assistant-chat open" : "assistant-chat"} aria-label="설계 보조 챗">
@@ -713,7 +801,7 @@ function BlueprintAssistantChat({ blueprint, isOpen, onToggle }) {
             </span>
             <div>
               <strong>DevBlueprint Bot</strong>
-              <small>{blueprint ? "현재 설계도 개선 준비됨" : "설계도 생성 후 수정 가능"}</small>
+              <small>{canRevise ? "현재 설계도 개선 준비됨" : "설계도 생성 후 수정 가능"}</small>
             </div>
             <button type="button" onClick={onToggle} aria-label="설계 보조 챗 닫기">
               <X size={18} />
@@ -727,24 +815,58 @@ function BlueprintAssistantChat({ blueprint, isOpen, onToggle }) {
               </p>
             </div>
 
+            {isRevising && (
+              <div className="assistant-revision-progress" aria-live="polite">
+                <div className="assistant-progress-heading">
+                  <Loader2 className="spin" size={17} />
+                  <strong>{REVISION_STEPS[revisionStepIndex]}</strong>
+                </div>
+                {pendingInstruction && <p>요청: {pendingInstruction}</p>}
+                <div className="assistant-progress-steps">
+                  {REVISION_STEPS.map((step, index) => (
+                    <span
+                      className={[
+                        "assistant-progress-step",
+                        index === revisionStepIndex ? "active" : "",
+                        index < revisionStepIndex ? "done" : "",
+                      ].filter(Boolean).join(" ")}
+                      key={step}
+                    >
+                      {step}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="assistant-quick-prompts" aria-label="빠른 수정 요청 예시">
               {quickPrompts.map((prompt) => (
-                <button type="button" key={prompt} disabled={!blueprint}>
+                <button type="button" key={prompt} disabled={isDisabled} onClick={() => submitRevision(prompt)}>
                   {prompt}
                 </button>
               ))}
             </div>
+
+            {chatStatus && <p className="assistant-chat-status">{chatStatus}</p>}
           </div>
 
-          <form className="assistant-chat-input" onSubmit={(event) => event.preventDefault()}>
+          <form
+            className="assistant-chat-input"
+            onSubmit={(event) => {
+              event.preventDefault();
+              submitRevision(message);
+            }}
+          >
             <input
               aria-label="설계도 수정 요청"
-              disabled={!blueprint}
-              placeholder={blueprint ? "수정 요청을 입력하세요" : "먼저 설계도를 생성하세요"}
+              disabled={isDisabled}
+              onChange={(event) => setMessage(event.target.value)}
+              placeholder={isRevising ? "수정 요청을 반영하는 중입니다" : canRevise ? "수정 요청을 입력하세요" : "먼저 설계도를 생성하세요"}
               type="text"
+              value={message}
             />
-            <button type="submit" disabled={!blueprint} aria-label="수정 요청 보내기">
-              <Send size={17} />
+            <button type="submit" disabled={isDisabled || message.trim().length < 5} aria-label="수정 요청 보내기">
+              {isRevising ? <Loader2 className="spin" size={17} /> : <Send size={17} />}
             </button>
           </form>
         </section>

@@ -1,5 +1,5 @@
-from app.core.config import settings
-from app.repositories.blueprint_repository import blueprint_repository
+﻿from app.core.config import settings
+from app.repositories.blueprint_repository import StoredBlueprint, blueprint_repository
 from app.schemas.blueprint import (
     ApiField,
     ApiSpec,
@@ -12,22 +12,42 @@ from app.schemas.blueprint import (
 )
 from app.services.blueprint_validator import collect_blueprint_quality_errors, validate_blueprint_quality
 from app.services.llm_client import BlueprintGenerationError, request_blueprint_from_openai
-from app.services.prompts import BLUEPRINT_PROMPT_VERSION, build_blueprint_prompt
+from app.services.prompts import BLUEPRINT_PROMPT_VERSION, build_blueprint_prompt, build_blueprint_revision_prompt
 
 
 MAX_OPENAI_GENERATION_ATTEMPTS = 3
+REVISION_MARKER = "수정:"
+REVISION_STOPWORDS = {
+    "같은",
+    "기능",
+    "추가",
+    "추가해",
+    "추가해줘",
+    "수정",
+    "변경",
+    "반영",
+    "해줘",
+    "해주세요",
+    "만들어",
+    "만들어줘",
+    "넣어줘",
+}
+
+
+class DuplicateBlueprintRevisionError(RuntimeError):
+    """?대? 諛섏쁺???섏젙 ?붿껌???ㅼ떆 ?앹꽦?섏? ?딅룄濡??뚮젮二쇰뒗 ?덉쇅?낅땲??"""
 
 
 def generate_blueprint(payload: BlueprintRequest) -> BlueprintResponse:
-    """서비스 아이디어를 받아 시스템 설계도 응답을 생성합니다."""
+    """?쒕퉬???꾩씠?붿뼱瑜?諛쏆븘 ?쒖뒪???ㅺ퀎???묐떟???앹꽦?⑸땲??"""
     cache_key = build_cache_key(payload.idea)
 
     cached_blueprint = blueprint_repository.get(cache_key)
     if cached_blueprint is not None:
         return cached_blueprint
 
-    # USE_OPENAI=false이면 API key가 있더라도 실제 OpenAI 호출을 하지 않습니다.
-    # 개발 중 화면 확인이나 반복 테스트를 할 때 토큰 비용을 막기 위한 안전장치입니다.
+    # USE_OPENAI=false?대㈃ API key媛 ?덈뜑?쇰룄 ?ㅼ젣 OpenAI ?몄텧???섏? ?딆뒿?덈떎.
+    # 媛쒕컻 以??붾㈃ ?뺤씤?대굹 諛섎났 ?뚯뒪?몃? ?????좏겙 鍮꾩슜??留됯린 ?꾪븳 ?덉쟾?μ튂?낅땲??
     if not settings.use_openai:
         blueprint = build_placeholder_blueprint(payload)
     else:
@@ -39,8 +59,32 @@ def generate_blueprint(payload: BlueprintRequest) -> BlueprintResponse:
     return blueprint
 
 
+def revise_blueprint(idea: str, current_blueprint: BlueprintResponse, instruction: str) -> StoredBlueprint:
+    """湲곗〈 ?ㅺ퀎?꾩? ?ъ슜???섏젙 ?붿껌??諛뷀깢?쇰줈 寃利?媛?ν븳 ???ㅺ퀎?꾨? ?앹꽦?⑸땲??"""
+    base_idea = strip_revision_suffix(idea)
+    revision_instruction = instruction.strip()
+    revision_cache_key = build_revision_cache_key(base_idea, revision_instruction)
+    cached_revision = blueprint_repository.get_stored_by_key(revision_cache_key)
+
+    if cached_revision is not None or is_instruction_already_reflected(current_blueprint, revision_instruction):
+        raise DuplicateBlueprintRevisionError("이미 해당 수정 요청이 설계도에 반영되어 있습니다.")
+
+    if not settings.use_openai:
+        blueprint = build_placeholder_revision_blueprint(current_blueprint, revision_instruction)
+    else:
+        user_prompt = build_blueprint_revision_prompt(base_idea, current_blueprint, revision_instruction)
+        blueprint = generate_blueprint_with_retry(user_prompt)
+
+    validate_blueprint_quality(blueprint)
+    return blueprint_repository.save(
+        revision_cache_key,
+        blueprint,
+        idea=base_idea,
+    )
+
+
 def generate_blueprint_with_retry(user_prompt: str) -> BlueprintResponse:
-    """품질 검증에 실패한 OpenAI 결과를 feedback과 함께 재생성합니다."""
+    """?덉쭏 寃利앹뿉 ?ㅽ뙣??OpenAI 寃곌낵瑜?feedback怨??④퍡 ?ъ깮?깊빀?덈떎."""
     validation_feedback: list[str] | None = None
     last_errors: list[str] = []
 
@@ -59,212 +103,152 @@ def generate_blueprint_with_retry(user_prompt: str) -> BlueprintResponse:
 
 
 def normalize_idea(idea: str) -> str:
-    """같은 의미의 반복 입력을 최대한 같은 cache key로 묶기 위해 공백을 정리합니다."""
+    """媛숈? ?섎???諛섎났 ?낅젰??理쒕???媛숈? cache key濡?臾띔린 ?꾪빐 怨듬갚???뺣━?⑸땲??"""
     return " ".join(idea.strip().split()).lower()
 
 
 def build_cache_key(idea: str) -> str:
-    """OpenAI 사용 여부와 모델이 다른 결과가 같은 캐시에 섞이지 않도록 cache key를 만듭니다."""
+    """OpenAI ?ъ슜 ?щ?? 紐⑤뜽???ㅻⅨ 寃곌낵媛 媛숈? 罹먯떆???욎씠吏 ?딅룄濡?cache key瑜?留뚮벊?덈떎."""
     source = "openai" if settings.use_openai else "placeholder"
     return f"{source}:{settings.openai_model}:{BLUEPRINT_PROMPT_VERSION}:{normalize_idea(idea)}"
 
 
+def build_revision_cache_key(idea: str, instruction: str) -> str:
+    """媛숈? ?먮낯 ?꾩씠?붿뼱?쇰룄 ?섏젙 ?붿껌蹂꾨줈 蹂꾨룄 ??λ낯???⑤룄濡?revision cache key瑜?留뚮벊?덈떎."""
+    source = "openai" if settings.use_openai else "placeholder"
+    normalized_source = normalize_idea(f"{idea} {instruction}")
+    return f"{source}:{settings.openai_model}:{BLUEPRINT_PROMPT_VERSION}:revision:{normalized_source}"
+
+
+def strip_revision_suffix(idea: str) -> str:
+    """이전 수정 저장명이 원본 아이디어에 섞이지 않도록 수정 표시 이후 문구를 제거합니다."""
+    return idea.split(REVISION_MARKER, 1)[0].replace("·", "").strip()
+
+
+def normalize_revision_text(value: str) -> str:
+    """중복 판단을 위해 공백과 대소문자 차이를 제거한 비교 문자열을 만듭니다."""
+    return "".join(value.lower().split())
+
+
+def extract_revision_keywords(instruction: str) -> list[str]:
+    """수정 요청에서 이미 반영 여부를 판단할 수 있는 핵심 단어만 추립니다."""
+    normalized_words = [word.strip(".,!?·:;()[]{}") for word in instruction.lower().split()]
+    return [
+        word
+        for word in normalized_words
+        if len(word) >= 2 and word not in REVISION_STOPWORDS and not word.endswith("해줘")
+    ]
+
+
+def is_instruction_already_reflected(blueprint: BlueprintResponse, instruction: str) -> bool:
+    """수정 요청의 핵심 단어가 기존 설계도 주요 설명에 이미 있으면 중복 요청으로 간주합니다."""
+    keywords = extract_revision_keywords(instruction)
+
+    if not keywords:
+        return False
+
+    searchable_text = normalize_revision_text(
+        " ".join(
+            [
+                blueprint.overview,
+                " ".join(f"{feature.name} {feature.description}" for feature in blueprint.features),
+                " ".join(f"{api.path} {api.description}" for api in blueprint.api_spec),
+                " ".join(f"{table.name} {table.description}" for table in blueprint.database_schema),
+            ]
+        )
+    )
+
+    return all(normalize_revision_text(keyword) in searchable_text for keyword in keywords)
+
+
+
+def build_placeholder_revision_blueprint(
+    current_blueprint: BlueprintResponse,
+    instruction: str,
+) -> BlueprintResponse:
+    """OpenAI 없이도 수정 요청 UI 흐름을 확인할 수 있도록 기존 설계도에 수정 흔적을 반영합니다."""
+    blueprint = current_blueprint.model_copy(deep=True)
+    blueprint.overview = f"{blueprint.overview} 수정 요청 '{instruction}'을 반영한 개선 설계입니다."
+
+    if blueprint.features:
+        blueprint.features[0].description = (
+            f"{blueprint.features[0].description} 추가 수정 요청인 '{instruction}'을 우선 반영합니다."
+        )
+
+    return blueprint
+
+
 def build_placeholder_blueprint(payload: BlueprintRequest) -> BlueprintResponse:
-    """OpenAI 연동 없이도 API와 화면을 검증할 수 있는 충분한 예시 응답을 생성합니다."""
+    """OpenAI 연동 없이도 API와 화면을 검증할 수 있는 예시 설계도를 생성합니다."""
     idea = payload.idea.strip()
 
     return BlueprintResponse(
         overview=f"'{idea}'에 대한 MVP 중심 시스템 설계도입니다.",
         features=[
-            Feature(
-                name="아이디어 제출",
-                description="사용자가 만들고 싶은 서비스 아이디어와 필요한 기능을 자연어로 제출합니다.",
-                priority="high",
-            ),
-            Feature(
-                name="설계 결과 저장",
-                description="생성된 설계도와 원본 아이디어를 저장해 나중에 다시 조회할 수 있게 합니다.",
-                priority="high",
-            ),
-            Feature(
-                name="도메인 API 초안",
-                description="입력한 서비스 성격에 맞는 REST API endpoint와 입출력 필드를 제안합니다.",
-                priority="high",
-            ),
-            Feature(
-                name="데이터 모델 설계",
-                description="서비스 구현에 필요한 테이블, 컬럼, 관계를 PostgreSQL 기준으로 정리합니다.",
-                priority="medium",
-            ),
-            Feature(
-                name="주요 흐름 시각화",
-                description="사용자의 핵심 요청이 화면, API, 저장소를 거치는 과정을 시퀀스로 표현합니다.",
-                priority="medium",
-            ),
-            Feature(
-                name="Markdown 문서화",
-                description="완성된 설계도를 개발자가 공유하기 쉬운 Markdown 문서로 내려받게 합니다.",
-                priority="low",
-            ),
+            Feature(name="아이디어 제출", description="사용자가 만들고 싶은 서비스 아이디어를 자연어로 제출합니다.", priority="high"),
+            Feature(name="설계 결과 저장", description="생성된 설계도와 원본 아이디어를 저장해 이후 다시 조회할 수 있게 합니다.", priority="high"),
+            Feature(name="도메인 API 초안", description="입력된 서비스 성격에 맞는 REST API endpoint와 입출력 필드를 제안합니다.", priority="high"),
+            Feature(name="데이터 모델 설계", description="서비스 구현에 필요한 테이블, 컬럼, 관계를 PostgreSQL 기준으로 정리합니다.", priority="medium"),
+            Feature(name="주요 흐름 시각화", description="사용자 요청이 화면, API, 저장소를 거치는 과정을 시퀀스로 표현합니다.", priority="medium"),
+            Feature(name="Markdown 문서화", description="완성된 설계도를 개발자가 공유하기 쉬운 Markdown 문서로 내려받게 합니다.", priority="low"),
         ],
         tech_stack=TechStack(
             backend=["Python", "FastAPI", "Pydantic"],
-            frontend=["Streamlit"],
+            frontend=["React", "Vite"],
             database=["PostgreSQL"],
             ai=["OpenAI API"],
-            rationale="FastAPI와 Pydantic은 structured output 검증에 적합하고, Streamlit은 MVP 화면을 빠르게 검증하기 좋습니다. PostgreSQL은 생성 결과 저장과 이력 관리가 필요해질 때 자연스럽게 확장할 수 있습니다.",
+            rationale="FastAPI와 Pydantic은 구조화된 API 응답 검증에 적합하고, React는 설계 결과를 탭과 다이어그램 중심으로 보여주기 좋습니다. PostgreSQL은 저장된 설계도와 버전 관리를 안정적으로 확장할 수 있습니다.",
         ),
         api_spec=[
-            ApiSpec(
-                method="POST",
-                path="/api/v1/blueprint/generate",
-                description="자연어 서비스 아이디어를 받아 시스템 설계도를 생성합니다.",
-                request=[
-                    ApiField(
-                        name="idea",
-                        type="string",
-                        description="사용자가 만들고 싶은 서비스 아이디어입니다.",
-                        required=True,
-                    )
-                ],
-                response=[
-                    ApiField(
-                        name="overview",
-                        type="string",
-                        description="생성된 시스템 설계도의 요약입니다.",
-                        required=True,
-                    ),
-                    ApiField(
-                        name="features",
-                        type="array",
-                        description="핵심 기능 목록입니다.",
-                        required=True,
-                    ),
-                ],
-            ),
-            ApiSpec(
-                method="GET",
-                path="/api/v1/blueprint/examples",
-                description="사용자가 빠르게 테스트할 수 있는 샘플 아이디어 목록을 반환합니다.",
-                request=[],
-                response=[
-                    ApiField(
-                        name="examples",
-                        type="array",
-                        description="샘플 서비스 아이디어 목록입니다.",
-                        required=True,
-                    )
-                ],
-            ),
-            ApiSpec(
-                method="GET",
-                path="/api/v1/blueprint/{blueprint_id}",
-                description="저장 기능을 추가했을 때 특정 설계도 결과를 조회합니다.",
-                request=[
-                    ApiField(
-                        name="blueprint_id",
-                        type="string",
-                        description="조회할 설계도 ID입니다.",
-                        required=True,
-                    )
-                ],
-                response=[
-                    ApiField(
-                        name="blueprint",
-                        type="object",
-                        description="저장된 설계도 결과입니다.",
-                        required=True,
-                    )
-                ],
-            ),
-            ApiSpec(
-                method="GET",
-                path="/api/v1/blueprints",
-                description="저장 기능을 추가했을 때 최근 생성된 설계도 목록을 조회합니다.",
-                request=[],
-                response=[
-                    ApiField(
-                        name="items",
-                        type="array",
-                        description="최근 생성된 설계도 목록입니다.",
-                        required=True,
-                    )
-                ],
-            ),
+            ApiSpec(method="POST", path="/api/v1/blueprint/generate", description="서비스 아이디어를 받아 시스템 설계도를 생성합니다.", request=[ApiField(name="idea", type="string", description="사용자가 만들고 싶은 서비스 아이디어입니다.", required=True)], response=[ApiField(name="overview", type="string", description="생성된 설계도의 요약입니다.", required=True), ApiField(name="features", type="array", description="핵심 기능 목록입니다.", required=True)]),
+            ApiSpec(method="GET", path="/api/v1/blueprints", description="최근 생성된 설계도 목록을 조회합니다.", request=[], response=[ApiField(name="items", type="array", description="최근 생성된 설계도 목록입니다.", required=True)]),
+            ApiSpec(method="GET", path="/api/v1/blueprints/{blueprint_id}", description="저장된 특정 설계도 상세 결과를 조회합니다.", request=[ApiField(name="blueprint_id", type="string", description="조회할 설계도 ID입니다.", required=True)], response=[ApiField(name="result", type="object", description="저장된 설계도 전체 결과입니다.", required=True)]),
+            ApiSpec(method="POST", path="/api/v1/blueprints/{blueprint_id}/revise", description="기존 설계도와 수정 요청을 바탕으로 개선된 설계도를 생성합니다.", request=[ApiField(name="blueprint_id", type="string", description="수정할 설계도 ID입니다.", required=True), ApiField(name="instruction", type="string", description="사용자가 원하는 수정 방향입니다.", required=True)], response=[ApiField(name="result", type="object", description="수정된 설계도 전체 결과입니다.", required=True)]),
         ],
         database_schema=[
-            DatabaseTable(
-                name="blueprints",
-                description="사용자가 생성한 설계도 결과를 저장하는 중심 테이블입니다.",
-                columns=[
-                    DatabaseColumn(name="id", type="uuid", description="설계도 고유 식별자입니다.", constraints=["primary_key"]),
-                    DatabaseColumn(name="idea", type="text", description="사용자가 입력한 원본 서비스 아이디어입니다.", constraints=["not_null"]),
-                    DatabaseColumn(name="result", type="jsonb", description="생성된 설계도 JSON 결과입니다.", constraints=["not_null"]),
-                    DatabaseColumn(name="created_at", type="timestamp", description="설계도 생성 시각입니다.", constraints=["not_null"]),
-                ],
-            ),
-            DatabaseTable(
-                name="blueprint_features",
-                description="설계도에 포함된 핵심 기능을 검색하거나 비교하기 위해 분리 저장하는 테이블입니다.",
-                columns=[
-                    DatabaseColumn(name="id", type="uuid", description="기능 항목 고유 식별자입니다.", constraints=["primary_key"]),
-                    DatabaseColumn(name="blueprint_id", type="uuid", description="blueprints 테이블 참조 ID입니다.", constraints=["not_null", "foreign_key"]),
-                    DatabaseColumn(name="name", type="varchar", description="기능 이름입니다.", constraints=["not_null"]),
-                    DatabaseColumn(name="priority", type="varchar", description="기능 우선순위입니다.", constraints=["not_null"]),
-                ],
-            ),
-            DatabaseTable(
-                name="blueprint_api_specs",
-                description="생성된 API 설계 항목을 endpoint 단위로 저장하는 테이블입니다.",
-                columns=[
-                    DatabaseColumn(name="id", type="uuid", description="API 설계 항목 고유 식별자입니다.", constraints=["primary_key"]),
-                    DatabaseColumn(name="blueprint_id", type="uuid", description="blueprints 테이블 참조 ID입니다.", constraints=["not_null", "foreign_key"]),
-                    DatabaseColumn(name="method", type="varchar", description="HTTP method입니다.", constraints=["not_null"]),
-                    DatabaseColumn(name="path", type="varchar", description="API endpoint path입니다.", constraints=["not_null"]),
-                ],
-            ),
+            DatabaseTable(name="blueprints", description="사용자가 생성한 설계도 결과를 저장하는 중심 테이블입니다.", columns=[DatabaseColumn(name="id", type="uuid", description="설계도 고유 식별자입니다.", constraints=["primary_key"]), DatabaseColumn(name="idea", type="text", description="사용자가 입력한 원본 서비스 아이디어입니다.", constraints=["not_null"]), DatabaseColumn(name="result", type="jsonb", description="생성된 설계도 JSON 결과입니다.", constraints=["not_null"]), DatabaseColumn(name="created_at", type="timestamp", description="설계도 생성 시각입니다.", constraints=["not_null"])]),
+            DatabaseTable(name="blueprint_features", description="설계도에 포함된 핵심 기능을 검색하거나 비교하기 위해 분리 저장하는 테이블입니다.", columns=[DatabaseColumn(name="id", type="uuid", description="기능 항목 고유 식별자입니다.", constraints=["primary_key"]), DatabaseColumn(name="blueprint_id", type="uuid", description="blueprints 테이블 참조 ID입니다.", constraints=["not_null", "foreign_key"]), DatabaseColumn(name="name", type="varchar", description="기능 이름입니다.", constraints=["not_null"]), DatabaseColumn(name="priority", type="varchar", description="기능 우선순위입니다.", constraints=["not_null"])]),
+            DatabaseTable(name="blueprint_api_specs", description="생성된 API 설계 항목을 endpoint 단위로 저장하는 테이블입니다.", columns=[DatabaseColumn(name="id", type="uuid", description="API 설계 항목 고유 식별자입니다.", constraints=["primary_key"]), DatabaseColumn(name="blueprint_id", type="uuid", description="blueprints 테이블 참조 ID입니다.", constraints=["not_null", "foreign_key"]), DatabaseColumn(name="method", type="varchar", description="HTTP method입니다.", constraints=["not_null"]), DatabaseColumn(name="path", type="varchar", description="API endpoint path입니다.", constraints=["not_null"])]),
         ],
-        database_erd=(
-            "erDiagram\n"
-            "  blueprints ||--o{ blueprint_features : contains\n"
-            "  blueprints ||--o{ blueprint_api_specs : contains\n"
-            "  blueprints {\n"
-            "    uuid id PK\n"
-            "    text idea\n"
-            "    jsonb result\n"
-            "    timestamp created_at\n"
-            "  }\n"
-            "  blueprint_features {\n"
-            "    uuid id PK\n"
-            "    uuid blueprint_id FK\n"
-            "    varchar name\n"
-            "    varchar priority\n"
-            "  }\n"
-            "  blueprint_api_specs {\n"
-            "    uuid id PK\n"
-            "    uuid blueprint_id FK\n"
-            "    varchar method\n"
-            "    varchar path\n"
-            "  }\n"
-        ),
-        sequence_diagram=(
-            "sequenceDiagram\n"
-            "  participant User as 사용자\n"
-            "  participant UI as Streamlit 화면\n"
-            "  participant API as FastAPI 서버\n"
-            "  participant Store as Blueprint Repository\n"
-            "  participant LLM as OpenAI API\n"
-            "  User->>UI: 서비스 아이디어 입력\n"
-            "  UI->>API: POST /api/v1/blueprint/generate\n"
-            "  API->>Store: 같은 idea 결과 확인\n"
-            "  alt cached result exists\n"
-            "    Store-->>API: 저장된 설계도 반환\n"
-            "  else cache miss\n"
-            "    API->>LLM: 구조화된 설계도 요청\n"
-            "    LLM-->>API: JSON 설계도 반환\n"
-            "    API->>Store: 결과 저장\n"
-            "  end\n"
-            "  API-->>UI: 설계도 응답 반환\n"
-            "  UI-->>User: 결과 화면 표시\n"
-        ),
+        database_erd="""erDiagram
+  blueprints ||--o{ blueprint_features : contains
+  blueprints ||--o{ blueprint_api_specs : contains
+  blueprints {
+    uuid id PK
+    text idea
+    jsonb result
+    timestamp created_at
+  }
+  blueprint_features {
+    uuid id PK
+    uuid blueprint_id FK
+    varchar name
+    varchar priority
+  }
+  blueprint_api_specs {
+    uuid id PK
+    uuid blueprint_id FK
+    varchar method
+    varchar path
+  }
+""",
+        sequence_diagram="""sequenceDiagram
+  participant User as 사용자
+  participant UI as React 화면
+  participant API as FastAPI 서버
+  participant Store as Blueprint Repository
+  participant LLM as OpenAI API
+  User->>UI: 서비스 아이디어 입력
+  UI->>API: POST /api/v1/blueprint/generate
+  API->>Store: 같은 idea 결과 확인
+  alt cached result exists
+    Store-->>API: 저장된 설계도 반환
+  else cache miss
+    API->>LLM: 구조화된 설계도 요청
+    LLM-->>API: JSON 설계도 반환
+    API->>Store: 결과 저장
+  end
+  API-->>UI: 설계도 응답 반환
+  UI-->>User: 결과 화면 표시
+""",
     )

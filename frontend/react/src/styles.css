@@ -1057,6 +1057,79 @@ textarea:focus {
   background: #f2f5f9;
 }
 
+/* 수정 요청 처리 중에는 현재 단계와 요청 내용을 보여줘 대기 시간을 덜 막막하게 만듭니다. */
+.assistant-revision-progress {
+  display: grid;
+  gap: 10px;
+  border: 1px solid #bfdbfe;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #eff6ff, #ffffff);
+  padding: 12px;
+}
+
+.assistant-progress-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #1d4ed8;
+}
+
+.assistant-progress-heading strong {
+  font-size: 13px;
+}
+
+.assistant-revision-progress p {
+  margin: 0;
+  color: #33465f;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.45;
+}
+
+.assistant-progress-steps {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.assistant-progress-step {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+  border: 1px solid #dbe4f0;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #8ea2c0;
+  font-size: 11px;
+  font-weight: 900;
+  text-align: center;
+}
+
+.assistant-progress-step.active {
+  border-color: #3b82f6;
+  background: #2563eb;
+  color: #ffffff;
+}
+
+.assistant-progress-step.done {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+  color: #0f9f78;
+}
+
+.assistant-chat-status {
+  margin: 0;
+  border: 1px solid #dbeafe;
+  border-radius: 10px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  padding: 9px 10px;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.45;
+}
+
 .assistant-chat-input {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 42px;
@@ -1090,6 +1163,11 @@ textarea:focus {
   border-radius: 10px;
   background: #2563eb;
   color: #ffffff;
+}
+
+.assistant-chat-input button:disabled {
+  border-color: #bfdbfe;
+  background: #93c5fd;
 }
 
 .assistant-chat-button {

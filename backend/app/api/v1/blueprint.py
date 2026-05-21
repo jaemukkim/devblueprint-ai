@@ -4,12 +4,13 @@ from app.repositories.blueprint_repository import StoredBlueprint, blueprint_rep
 from app.schemas.blueprint import (
     BlueprintListResponse,
     BlueprintRequest,
+    BlueprintRevisionRequest,
     BlueprintResponse,
     BlueprintSummary,
     StoredBlueprintResponse,
 )
 from app.services.llm_client import BlueprintGenerationError
-from app.services.blueprint_generator import generate_blueprint
+from app.services.blueprint_generator import DuplicateBlueprintRevisionError, generate_blueprint, revise_blueprint
 
 
 router = APIRouter(prefix="/blueprint", tags=["blueprint"])
@@ -45,6 +46,33 @@ def get_blueprint(blueprint_id: str) -> StoredBlueprintResponse:
         idea=stored_blueprint.idea,
         created_at=stored_blueprint.created_at,
         result=stored_blueprint.result,
+    )
+
+
+@blueprints_router.post("/{blueprint_id}/revise", response_model=StoredBlueprintResponse)
+def revise_stored_blueprint(blueprint_id: str, payload: BlueprintRevisionRequest) -> StoredBlueprintResponse:
+    stored_blueprint = blueprint_repository.get_by_id(blueprint_id)
+
+    if stored_blueprint is None:
+        raise HTTPException(status_code=404, detail="수정할 설계도를 찾을 수 없습니다.")
+
+    try:
+        revised_blueprint = revise_blueprint(
+            stored_blueprint.idea,
+            stored_blueprint.result,
+            payload.instruction,
+        )
+    except DuplicateBlueprintRevisionError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except BlueprintGenerationError as exc:
+        # 수정 요청도 LLM 생성과 검증 과정을 거치므로 생성 실패와 같은 방식으로 안내합니다.
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    return StoredBlueprintResponse(
+        id=revised_blueprint.id,
+        idea=revised_blueprint.idea,
+        created_at=revised_blueprint.created_at,
+        result=revised_blueprint.result,
     )
 
 
