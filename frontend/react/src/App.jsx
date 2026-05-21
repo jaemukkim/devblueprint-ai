@@ -195,8 +195,26 @@ function buildRecentBlueprintItems(items) {
       version,
       versionLabel: version === 1 ? "초안" : `개선안 ${version - 1}`,
       isRevision: version > 1,
+      revisionSummary: summarizeRevisionInstruction(item.revision_instruction),
     };
   });
+}
+
+// 카드가 길어지지 않도록 수정 요청 원문을 짧은 한 줄 요약으로 줄입니다.
+function summarizeRevisionInstruction(instruction) {
+  if (!instruction) {
+    return "";
+  }
+
+  const normalizedInstruction = instruction.replace(/\s+/g, " ").trim();
+  const maxLength = 18;
+  const characters = Array.from(normalizedInstruction);
+
+  if (characters.length <= maxLength) {
+    return normalizedInstruction;
+  }
+
+  return `${characters.slice(0, maxLength).join("")}...`;
 }
 
 function TechStackColumn({ title, items }) {
@@ -526,6 +544,12 @@ function App() {
                         <span className="recent-title-line">
                           <strong>{item.baseIdea}</strong>
                         </span>
+                        {item.revisionSummary && (
+                          <span className="recent-revision-note" title={item.revision_instruction || ""}>
+                            <span>수정</span>
+                            {item.revisionSummary}
+                          </span>
+                        )}
                         <span className="recent-meta-line">
                           <span className="recent-badge-row">
                             <span className={item.isRevision ? "recent-version revision" : "recent-version"}>

@@ -20,6 +20,11 @@ DevBlueprint AI는 자연어로 작성한 서비스 아이디어를 개발자가
 - 결과 탭: 요약 / 기능 / API / DB / 다이어그램
 - Markdown 다운로드
 - Mermaid ERD 및 sequence diagram 렌더링
+- 설계도 수정 요청 챗봇 UI
+- 챗봇 수정 요청 기반 새 설계도 생성
+- 중복 수정 요청 방지 및 사용자 안내
+- 최근 설계도 목록의 초안/개선안 구분
+- 수정 요청 요약 표시
 - Streamlit MVP 화면은 `frontend/streamlit/`에 보관
 
 ## 프로젝트 구조
@@ -165,6 +170,7 @@ GET    /health
 POST   /api/v1/blueprint/generate
 GET    /api/v1/blueprints
 GET    /api/v1/blueprints/{blueprint_id}
+POST   /api/v1/blueprints/{blueprint_id}/revise
 DELETE /api/v1/blueprints/{blueprint_id}
 ```
 
@@ -174,12 +180,12 @@ DELETE /api/v1/blueprints/{blueprint_id}
 python -m pytest
 ```
 
-현재 테스트는 health check, CORS, 설계도 생성, cache 재사용, 목록 조회, 상세 조회, 삭제, 품질 검증, OpenAI retry 로직을 검증합니다.
+현재 테스트는 health check, CORS, 설계도 생성, cache 재사용, 목록 조회, 상세 조회, 삭제, 수정 요청, 중복 수정 방지, 품질 검증, OpenAI retry 로직을 검증합니다.
 
 최근 확인 결과:
 
 ```text
-20 passed
+32 passed
 ```
 
 React 빌드 확인:
@@ -206,6 +212,20 @@ User Idea
 
 PostgreSQL 사용 시 같은 idea 요청은 `cache_key`로 먼저 조회하고, 이미 저장된 결과가 있으면 새로 생성하지 않고 DB 결과를 재사용합니다.
 
+수정 요청 흐름:
+
+```text
+Saved Blueprint
+  -> Chatbot Revision Request
+  -> Duplicate Revision Check
+  -> OpenAI Revision Prompt or Placeholder
+  -> Quality Validation
+  -> New Saved Blueprint
+  -> Recent List as 개선안
+```
+
+수정 요청으로 생성된 설계도는 원본 idea를 유지하고, `revision_instruction`에 사용자의 수정 요청 원문을 저장합니다. React 최근 설계도 카드에서는 `초안`, `개선안 1`, `개선안 2`처럼 구분하고, 수정 요청은 한 줄 요약으로 표시합니다.
+
 ## 예시 결과
 
 - [호텔 예약 서비스](docs/examples/hotel_reservation_blueprint.md)
@@ -213,7 +233,9 @@ PostgreSQL 사용 시 같은 idea 요청은 `cache_key`로 먼저 조회하고, 
 
 ## 다음 작업 후보
 
-- React 화면 브라우저에서 실제 생성/조회/삭제 흐름 확인
-- 모바일 화면에서 히어로, 입력 카드, 최근 설계도 카드 반응형 확인
+- React 화면 브라우저에서 실제 생성/조회/수정/삭제 흐름 확인
+- 최근 설계도 카드에서 긴 제목/긴 수정 요청이 들어간 경우 UI 확인
+- 챗봇 수정 요청 성공 후 결과 영역 자동 이동/강조 UX 검토
+- 삭제를 실제 삭제로 유지할지, `deleted_at` 기반 소프트 삭제로 바꿀지 결정
 - Mermaid 번들 크기 개선 검토
 - README 스크린샷 추가

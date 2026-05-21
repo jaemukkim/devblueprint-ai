@@ -86,6 +86,7 @@ class BlueprintResponse(BaseModel):
 class BlueprintSummary(BaseModel):
     id: str
     idea: str
+    revision_instruction: str | None = None
     created_at: datetime
 
 

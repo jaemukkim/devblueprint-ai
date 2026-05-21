@@ -80,6 +80,7 @@ def revise_blueprint(idea: str, current_blueprint: BlueprintResponse, instructio
         revision_cache_key,
         blueprint,
         idea=base_idea,
+        revision_instruction=revision_instruction,
     )
 
 

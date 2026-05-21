@@ -13,6 +13,7 @@ class BlueprintModel(Base):
     id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True)
     cache_key: Mapped[str] = mapped_column(Text, nullable=False, unique=True, index=True)
     idea: Mapped[str] = mapped_column(Text, nullable=False)
+    revision_instruction: Mapped[str | None] = mapped_column(Text, nullable=True)
     result: Mapped[dict] = mapped_column(JSONB, nullable=False)
     created_at: Mapped[DateTime] = mapped_column(
         DateTime(timezone=True),

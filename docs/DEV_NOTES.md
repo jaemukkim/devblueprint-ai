@@ -175,11 +175,12 @@ Repository 구현체:
 PostgreSQL 저장 컬럼:
 
 ```text
-id          설계도 고유 ID
-cache_key   같은 idea 재사용을 위한 key
-idea        사용자가 입력한 원본 아이디어
-result      생성된 설계도 전체 JSON
-created_at  생성 시각
+id                    설계도 고유 ID
+cache_key             같은 idea 또는 같은 수정 요청 재사용을 위한 key
+idea                  사용자가 입력한 원본 아이디어
+revision_instruction  수정 요청으로 생성된 설계도의 원문 요청
+result                생성된 설계도 전체 JSON
+created_at            생성 시각
 ```
 
 ## Key Decisions
@@ -190,6 +191,43 @@ created_at  생성 시각
 - Streamlit MVP로 빠르게 검증한 뒤 React/Vite를 메인 화면으로 전환했습니다.
 - React/Vite 개발 서버 기본 origin인 `http://localhost:5173`을 CORS에 포함했습니다.
 - 생성형 결과 특성상 Update는 MVP 범위에서 제외하고 Create/Read/Delete 중심으로 구성했습니다.
+- 챗봇 수정 요청은 기존 설계도를 직접 덮어쓰지 않고 새 설계도로 저장합니다.
+- 같은 원본 idea와 같은 수정 요청은 중복 생성하지 않고 `409`로 안내합니다.
+- UI에서는 같은 idea 묶음을 `초안`, `개선안 1`, `개선안 2`로 표시합니다.
+- 수정 요청 요약은 카드 제목과 경쟁하지 않도록 제목 아래 별도 한 줄로 표시합니다.
+
+## 2026-05-21 작업 메모
+
+오늘 정리된 주요 작업:
+
+- 홈 화면 및 결과 영역 UI 간격/가독성 개선
+- 기술 스택 영역 아이콘 기반 표시
+- 생성 중 로딩/진행 메시지 개선
+- 설계도 생성 품질 검증 및 retry 개선
+- API field description, ERD table 누락 검증 보완
+- 품질 게이트 UI 추가
+- 파란색 로봇 느낌의 챗봇 진입 UI 추가
+- 챗봇 기반 수정 요청 API 연결
+- 중복 수정 요청 방지 및 챗봇 말풍선 안내
+- 최근 설계도 카드에서 초안/개선안 구분
+- 수정 요청 원문 저장 및 카드 요약 표시
+- `revision_instruction` DB 컬럼 migration 추가
+
+실행 환경 반영:
+
+```powershell
+docker compose up --build -d api
+docker compose exec api python -m alembic upgrade head
+```
+
+현재 Docker API 상태 확인:
+
+```text
+GET /health
+status: ok
+use_openai: True
+repository_backend: postgres
+```
 
 ## Current Test Coverage
 
@@ -203,6 +241,8 @@ created_at  생성 시각
 - 저장된 설계도 목록 조회
 - 저장된 설계도 상세 조회
 - 저장된 설계도 삭제
+- 저장된 설계도 수정 요청
+- 같은 수정 요청 중복 방지
 - 없는 설계도 조회/삭제 시 `404`
 - 품질 검증 규칙
 - 품질 검증 실패 시 retry
@@ -212,7 +252,7 @@ created_at  생성 시각
 
 ```powershell
 python -m pytest
-# 20 passed
+# 32 passed
 ```
 
 React 빌드:
@@ -226,9 +266,11 @@ npm run build
 
 추천 순서:
 
-1. 강의실 노트북에서 FastAPI + React 실행 확인
-2. React 화면에서 설계도 생성, 목록 조회, 상세 열기, 삭제 흐름 확인
-3. PostgreSQL 저장 여부 확인
-4. 모바일 화면 반응형 확인
-5. Mermaid ERD 및 sequence diagram 렌더링 확인
-6. README에 화면 스크린샷 추가 여부 검토
+1. 집 PC에서 FastAPI + React + Docker DB 실행 확인
+2. React 화면에서 설계도 생성, 목록 조회, 상세 열기, 챗봇 수정, 삭제 흐름 확인
+3. 긴 제목/긴 수정 요청이 최근 설계도 카드에서 깨지지 않는지 확인
+4. 챗봇 수정 요청 성공 후 사용자가 새 설계도를 더 쉽게 인지할 수 있는 강조 UX 검토
+5. 삭제를 실제 DB 삭제로 유지할지, `deleted_at` 기반 소프트 삭제로 바꿀지 결정
+6. 모바일 화면 반응형 확인
+7. Mermaid ERD 및 sequence diagram 렌더링 확인
+8. README에 화면 스크린샷 추가 여부 검토

@@ -44,6 +44,7 @@ def get_blueprint(blueprint_id: str) -> StoredBlueprintResponse:
     return StoredBlueprintResponse(
         id=stored_blueprint.id,
         idea=stored_blueprint.idea,
+        revision_instruction=stored_blueprint.revision_instruction,
         created_at=stored_blueprint.created_at,
         result=stored_blueprint.result,
     )
@@ -71,6 +72,7 @@ def revise_stored_blueprint(blueprint_id: str, payload: BlueprintRevisionRequest
     return StoredBlueprintResponse(
         id=revised_blueprint.id,
         idea=revised_blueprint.idea,
+        revision_instruction=revised_blueprint.revision_instruction,
         created_at=revised_blueprint.created_at,
         result=revised_blueprint.result,
     )
@@ -91,5 +93,6 @@ def to_blueprint_summary(stored_blueprint: StoredBlueprint) -> BlueprintSummary:
     return BlueprintSummary(
         id=stored_blueprint.id,
         idea=stored_blueprint.idea,
+        revision_instruction=stored_blueprint.revision_instruction,
         created_at=stored_blueprint.created_at,
     )
