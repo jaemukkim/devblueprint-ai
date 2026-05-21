@@ -13,7 +13,7 @@ from app.services.blueprint_generator import generate_blueprint_with_retry
 from app.services.llm_client import BlueprintGenerationError
 
 
-def make_blueprint(api_path: str = "/api/v1/items") -> BlueprintResponse:
+def make_blueprint(api_path: str = "/api/v1/books") -> BlueprintResponse:
     return BlueprintResponse(
         overview="테스트용 설계도입니다.",
         features=[
@@ -32,9 +32,9 @@ def make_blueprint(api_path: str = "/api/v1/items") -> BlueprintResponse:
         ),
         api_spec=[
             make_api_spec("POST", api_path),
-            make_api_spec("GET", "/api/v1/items"),
-            make_api_spec("GET", "/api/v1/items/{item_id}"),
-            make_api_spec("DELETE", "/api/v1/items/{item_id}"),
+            make_api_spec("GET", "/api/v1/books"),
+            make_api_spec("GET", "/api/v1/books/{book_id}"),
+            make_api_spec("DELETE", "/api/v1/books/{book_id}"),
         ],
         database_schema=[
             make_database_table("test_items"),
@@ -84,7 +84,19 @@ def make_database_table(name: str) -> DatabaseTable:
                 type="uuid",
                 description="식별자입니다.",
                 constraints=["primary_key"],
-            )
+            ),
+            DatabaseColumn(
+                name="created_at",
+                type="timestamp",
+                description="생성 시각입니다.",
+                constraints=["not_null"],
+            ),
+            DatabaseColumn(
+                name="updated_at",
+                type="timestamp",
+                description="수정 시각입니다.",
+                constraints=["not_null"],
+            ),
         ],
     )
 
@@ -104,9 +116,10 @@ def test_generate_blueprint_with_retry_returns_second_valid_result(monkeypatch) 
 
     result = generate_blueprint_with_retry("테스트 프롬프트")
 
-    assert result.api_spec[0].path == "/api/v1/items"
+    assert result.api_spec[0].path == "/api/v1/books"
     assert feedback_calls[0] is None
-    assert feedback_calls[1] == ["api path must start with '/': api/v1/items"]
+    assert "api path must start with '/': api/v1/items" in feedback_calls[1]
+    assert "api path is too generic: api/v1/items" in feedback_calls[1]
 
 
 def test_generate_blueprint_with_retry_fails_after_max_attempts(monkeypatch) -> None:

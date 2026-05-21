@@ -31,10 +31,10 @@ def make_valid_blueprint() -> BlueprintResponse:
             rationale="테스트용 기술 스택입니다.",
         ),
         api_spec=[
-            make_api_spec("POST", "/api/v1/items"),
-            make_api_spec("GET", "/api/v1/items"),
-            make_api_spec("GET", "/api/v1/items/{item_id}"),
-            make_api_spec("DELETE", "/api/v1/items/{item_id}"),
+            make_api_spec("POST", "/api/v1/books"),
+            make_api_spec("GET", "/api/v1/books"),
+            make_api_spec("GET", "/api/v1/books/{book_id}"),
+            make_api_spec("DELETE", "/api/v1/books/{book_id}"),
         ],
         database_schema=[
             make_database_table("test_items"),
@@ -84,7 +84,19 @@ def make_database_table(name: str) -> DatabaseTable:
                 type="uuid",
                 description="식별자입니다.",
                 constraints=["primary_key"],
-            )
+            ),
+            DatabaseColumn(
+                name="created_at",
+                type="timestamp",
+                description="생성 시각입니다.",
+                constraints=["not_null"],
+            ),
+            DatabaseColumn(
+                name="updated_at",
+                type="timestamp",
+                description="수정 시각입니다.",
+                constraints=["not_null"],
+            ),
         ],
     )
 
@@ -106,6 +118,23 @@ def test_validate_blueprint_quality_rejects_invalid_api_path() -> None:
     blueprint.api_spec[0].path = "api/v1/items"
 
     with pytest.raises(BlueprintGenerationError, match="api path must start"):
+        validate_blueprint_quality(blueprint)
+
+
+def test_validate_blueprint_quality_rejects_duplicate_api_endpoint() -> None:
+    blueprint = make_valid_blueprint()
+    blueprint.api_spec[1].method = blueprint.api_spec[0].method
+    blueprint.api_spec[1].path = blueprint.api_spec[0].path
+
+    with pytest.raises(BlueprintGenerationError, match="api endpoint must be unique"):
+        validate_blueprint_quality(blueprint)
+
+
+def test_validate_blueprint_quality_rejects_generic_api_resource() -> None:
+    blueprint = make_valid_blueprint()
+    blueprint.api_spec[0].path = "/api/v1/items"
+
+    with pytest.raises(BlueprintGenerationError, match="api path is too generic"):
         validate_blueprint_quality(blueprint)
 
 
@@ -138,6 +167,14 @@ def test_validate_blueprint_quality_rejects_table_without_primary_key() -> None:
     blueprint.database_schema[0].columns[0].constraints = ["not_null"]
 
     with pytest.raises(BlueprintGenerationError, match="primary_key"):
+        validate_blueprint_quality(blueprint)
+
+
+def test_validate_blueprint_quality_rejects_table_with_too_few_columns() -> None:
+    blueprint = make_valid_blueprint()
+    blueprint.database_schema[0].columns = blueprint.database_schema[0].columns[:2]
+
+    with pytest.raises(BlueprintGenerationError, match="at least 3 columns"):
         validate_blueprint_quality(blueprint)
 
 

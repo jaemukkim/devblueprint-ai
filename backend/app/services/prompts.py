@@ -1,7 +1,7 @@
 from app.schemas.blueprint import BlueprintRequest
 
 
-BLUEPRINT_PROMPT_VERSION = "quality-v2"
+BLUEPRINT_PROMPT_VERSION = "quality-v3"
 
 
 # 시스템 프롬프트는 모델의 역할과 설계 품질 기준을 고정합니다.
@@ -22,9 +22,12 @@ Follow these rules:
 - Include enough detail for a developer to understand the first implementation plan.
 - Every API path must start with "/" and use REST-style lowercase paths.
 - API paths must be domain-specific resources from the user's idea, not generic paths like /items unless the domain is actually generic inventory.
+- Avoid placeholder resource names such as /items, /records, /data, /results, /entities, or /objects.
+- Do not repeat the same HTTP method and path combination.
 - Each API request and response field should be useful for implementation. Include ids, status fields, timestamps, and ownership fields when relevant.
 - Database table and column names must use snake_case.
 - Database columns must include practical primary keys, foreign keys, timestamps, status fields, and uniqueness constraints when relevant.
+- Every database table must include at least 3 columns and a primary_key column.
 - Keep database_schema, database_erd, and api_spec consistent with each other.
 - Keep sequence diagrams focused on one main user flow, but include the major backend steps.
 - Write user-facing descriptions in Korean.
@@ -49,4 +52,6 @@ Make every feature, API endpoint, table, ERD relationship, and sequence step spe
 For each feature, describe the concrete user action or backend responsibility it enables.
 For each API endpoint, include realistic request and response fields that a frontend developer could wire directly.
 For each database table, include columns that support the proposed APIs and features.
+Use resource names that clearly reveal the product domain, such as books, reading_logs, reservations, chat_rooms, posts, or trades.
+Avoid one-column tables and avoid API endpoints that cannot be mapped to any feature or table.
 """

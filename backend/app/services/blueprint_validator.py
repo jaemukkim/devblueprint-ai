@@ -5,6 +5,7 @@ from app.services.llm_client import BlueprintGenerationError
 
 
 SNAKE_CASE_PATTERN = re.compile(r"^[a-z][a-z0-9_]*$")
+GENERIC_API_RESOURCES = {"items", "records", "data", "results", "entities", "objects"}
 GENERIC_FEATURE_NAMES = {
     "아이디어 분석",
     "기능 요구사항 정리",
@@ -14,6 +15,7 @@ GENERIC_FEATURE_NAMES = {
     "결과 다운로드",
 }
 MIN_FEATURE_DESCRIPTION_LENGTH = 20
+MIN_TABLE_COLUMN_COUNT = 3
 
 
 def collect_blueprint_quality_errors(blueprint: BlueprintResponse) -> list[str]:
@@ -28,6 +30,7 @@ def collect_blueprint_quality_errors(blueprint: BlueprintResponse) -> list[str]:
     validate_api_fields(blueprint, errors)
     validate_database_names(blueprint, errors)
     validate_database_primary_keys(blueprint, errors)
+    validate_database_depth(blueprint, errors)
     validate_database_erd(blueprint, errors)
     validate_sequence_diagram(blueprint, errors)
 
@@ -59,11 +62,22 @@ def validate_collection_size(
 
 def validate_api_paths(blueprint: BlueprintResponse, errors: list[str]) -> None:
     """API path가 REST API로 사용할 수 있는 기본 형태인지 확인합니다."""
+    seen_endpoints: set[tuple[str, str]] = set()
+
     for api in blueprint.api_spec:
         if not api.path.startswith("/"):
             errors.append(f"api path must start with '/': {api.path}")
         if " " in api.path:
             errors.append(f"api path must not contain spaces: {api.path}")
+
+        endpoint_key = (api.method, api.path)
+        if endpoint_key in seen_endpoints:
+            errors.append(f"api endpoint must be unique: {api.method} {api.path}")
+        seen_endpoints.add(endpoint_key)
+
+        resource_name = extract_primary_resource_name(api.path)
+        if resource_name in GENERIC_API_RESOURCES:
+            errors.append(f"api path is too generic: {api.path}")
 
 
 def validate_feature_quality(blueprint: BlueprintResponse, errors: list[str]) -> None:
@@ -115,6 +129,13 @@ def validate_database_primary_keys(blueprint: BlueprintResponse, errors: list[st
             errors.append(f"table must include a primary_key column: {table.name}")
 
 
+def validate_database_depth(blueprint: BlueprintResponse, errors: list[str]) -> None:
+    """각 테이블이 실제 구현에 참고할 수 있을 만큼 충분한 컬럼을 갖는지 확인합니다."""
+    for table in blueprint.database_schema:
+        if len(table.columns) < MIN_TABLE_COLUMN_COUNT:
+            errors.append(f"table must include at least {MIN_TABLE_COLUMN_COUNT} columns: {table.name}")
+
+
 def validate_database_erd(blueprint: BlueprintResponse, errors: list[str]) -> None:
     """Mermaid ERD로 렌더링 가능한 최소 형식을 확인합니다."""
     erd = blueprint.database_erd.strip()
@@ -138,3 +159,10 @@ def validate_sequence_diagram(blueprint: BlueprintResponse, errors: list[str]) -
 def normalize_constraint(constraint: str) -> str:
     """constraint 표기를 비교하기 쉽게 snake_case 소문자로 정규화합니다."""
     return constraint.strip().lower().replace(" ", "_")
+
+
+def extract_primary_resource_name(path: str) -> str:
+    """API path에서 버전 prefix와 path parameter를 제외한 첫 resource 이름을 추출합니다."""
+    parts = [part for part in path.strip("/").split("/") if part and not part.startswith("{")]
+    resource_parts = [part for part in parts if part not in {"api", "v1", "v2", "v3"}]
+    return resource_parts[0] if resource_parts else ""
