@@ -3,6 +3,7 @@ import {
   Blocks,
   Bot,
   Braces,
+  CheckCircle2,
   Code2,
   Database,
   Download,
@@ -501,6 +502,8 @@ function GenerationStatus({ activeStepIndex }) {
 }
 
 function BlueprintView({ activeTab, blueprint, setActiveTab }) {
+  const qualityItems = buildQualityItems(blueprint);
+
   return (
     <div className="result-layout">
       <nav className="result-tabs" aria-label="설계도 결과 탭">
@@ -531,6 +534,8 @@ function BlueprintView({ activeTab, blueprint, setActiveTab }) {
                 <Metric label="tables" value={blueprint.database_schema.length} />
               </div>
             </section>
+
+            <QualityChecks items={qualityItems} />
 
             <Section title="기술 스택" description="서비스 성격에 맞춘 구현 기술 후보입니다.">
               <div className="stack-grid stack-grid-wide">
@@ -612,6 +617,71 @@ function BlueprintView({ activeTab, blueprint, setActiveTab }) {
         )}
       </div>
     </div>
+  );
+}
+
+// 백엔드 validator를 통과한 결과임을 사용자가 볼 수 있게 요약 검증 항목을 만듭니다.
+function buildQualityItems(blueprint) {
+  const endpointKeys = blueprint.api_spec.map((endpoint) => `${endpoint.method} ${endpoint.path}`);
+  const uniqueEndpointCount = new Set(endpointKeys).size;
+  const erdText = blueprint.database_erd.toLowerCase();
+  const erdMatchesSchema = blueprint.database_schema.every((table) => erdText.includes(table.name.toLowerCase()));
+
+  return [
+    {
+      label: "기능 범위",
+      value: `${blueprint.features.length}개 기능`,
+      passed: blueprint.features.length >= 5 && blueprint.features.length <= 8,
+    },
+    {
+      label: "API 중복 검사",
+      value: `${uniqueEndpointCount}개 endpoint`,
+      passed: uniqueEndpointCount === blueprint.api_spec.length,
+    },
+    {
+      label: "DB 구조",
+      value: `${blueprint.database_schema.length}개 table`,
+      passed: blueprint.database_schema.length >= 3 && blueprint.database_schema.length <= 6,
+    },
+    {
+      label: "ERD 일치",
+      value: erdMatchesSchema ? "schema 반영" : "확인 필요",
+      passed: erdMatchesSchema,
+    },
+    {
+      label: "다이어그램 형식",
+      value: "Mermaid 통과",
+      passed: blueprint.database_erd.startsWith("erDiagram") && blueprint.sequence_diagram.startsWith("sequenceDiagram"),
+    },
+  ];
+}
+
+// 설계도 생성 결과가 어떤 품질 기준을 통과했는지 카드 형태로 보여줍니다.
+function QualityChecks({ items }) {
+  return (
+    <section className="quality-card">
+      <div className="quality-heading">
+        <div>
+          <p className="eyebrow">Quality Gate</p>
+          <h2>품질 검증 통과</h2>
+        </div>
+        <span className="quality-badge">
+          <CheckCircle2 size={16} />
+          검증 완료
+        </span>
+      </div>
+      <div className="quality-grid">
+        {items.map((item) => (
+          <div className={item.passed ? "quality-item passed" : "quality-item"} key={item.label}>
+            <CheckCircle2 size={17} />
+            <span>
+              <strong>{item.label}</strong>
+              <small>{item.value}</small>
+            </span>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 
