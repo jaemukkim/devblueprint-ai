@@ -17,7 +17,9 @@ async function requestJson(path, options = {}) {
 
   if (!response.ok) {
     const message = body.detail || `API 요청에 실패했습니다. status=${response.status}`;
-    throw new Error(message);
+    const error = new Error(message);
+    error.status = response.status;
+    throw error;
   }
 
   return body;

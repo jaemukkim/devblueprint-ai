@@ -166,6 +166,39 @@ function getBaseIdea(ideaText) {
   return ideaText.split("수정:", 1)[0].replace("·", "").trim();
 }
 
+// 같은 서비스 아이디어에서 파생된 수정 결과를 초안과 개선안으로 구분해 최근 목록에 표시합니다.
+function buildRecentBlueprintItems(items) {
+  const versionById = new Map();
+  const groups = new Map();
+
+  items.forEach((item) => {
+    const baseIdea = getBaseIdea(item.idea);
+    const group = groups.get(baseIdea) || [];
+    group.push(item);
+    groups.set(baseIdea, group);
+  });
+
+  groups.forEach((group) => {
+    [...group]
+      .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+      .forEach((item, index) => {
+        versionById.set(item.id, index + 1);
+      });
+  });
+
+  return items.map((item) => {
+    const version = versionById.get(item.id) || 1;
+
+    return {
+      ...item,
+      baseIdea: getBaseIdea(item.idea),
+      version,
+      versionLabel: version === 1 ? "초안" : `개선안 ${version - 1}`,
+      isRevision: version > 1,
+    };
+  });
+}
+
 function TechStackColumn({ title, items }) {
   const CategoryIcon = TECH_STACK_CATEGORY_ICONS[title] || Blocks;
 
@@ -217,6 +250,11 @@ function App() {
     const selected = recentBlueprints.find((item) => item.id === selectedBlueprintId);
     return getBaseIdea(selected?.idea || idea);
   }, [idea, recentBlueprints, selectedBlueprintId]);
+
+  const recentBlueprintItems = useMemo(
+    () => buildRecentBlueprintItems(recentBlueprints),
+    [recentBlueprints],
+  );
 
   async function refreshRecent() {
     const response = await listBlueprints();
@@ -474,10 +512,10 @@ function App() {
             </div>
 
             <div className="recent-list">
-              {recentBlueprints.length === 0 ? (
+              {recentBlueprintItems.length === 0 ? (
                 <p className="empty-text">저장된 설계도가 아직 없습니다.</p>
               ) : (
-                recentBlueprints.map((item) => (
+                recentBlueprintItems.map((item) => (
                   <div className="recent-row" key={item.id}>
                     <button
                       className={item.id === selectedBlueprintId ? "recent-item active" : "recent-item"}
@@ -485,10 +523,19 @@ function App() {
                     >
                       <span className="recent-icon"><Network size={18} /></span>
                       <span className="recent-content">
-                        <strong>{item.idea}</strong>
-                        <small>{new Date(item.created_at).toLocaleString()}</small>
+                        <span className="recent-title-line">
+                          <strong>{item.baseIdea}</strong>
+                        </span>
+                        <span className="recent-meta-line">
+                          <span className="recent-badge-row">
+                            <span className={item.isRevision ? "recent-version revision" : "recent-version"}>
+                              {item.versionLabel}
+                            </span>
+                            <span className="recent-status">완료</span>
+                          </span>
+                          <small>{new Date(item.created_at).toLocaleString()}</small>
+                        </span>
                       </span>
-                      <span className="recent-status">완료</span>
                     </button>
                     <button className="danger-button" onClick={() => handleDelete(item.id)} aria-label="설계도 삭제">
                       <Trash2 size={16} />
@@ -744,6 +791,8 @@ function QualityChecks({ items }) {
 function BlueprintAssistantChat({ blueprint, canRevise, isOpen, isRevising, onRevise, onToggle }) {
   const [message, setMessage] = useState("");
   const [chatStatus, setChatStatus] = useState("");
+  // 중복 요청처럼 사용자가 바로 이해해야 하는 응답은 봇 말풍선으로 따로 보여줍니다.
+  const [chatNotice, setChatNotice] = useState(null);
   const [pendingInstruction, setPendingInstruction] = useState("");
   const [revisionStepIndex, setRevisionStepIndex] = useState(0);
   const quickPrompts = [
@@ -769,6 +818,7 @@ function BlueprintAssistantChat({ blueprint, canRevise, isOpen, isRevising, onRe
   }, [isRevising]);
 
   // 사용자의 수정 요청을 부모 컴포넌트의 API 연결 함수로 넘기고 입력 상태를 정리합니다.
+  // 사용자의 수정 요청을 부모 컴포넌트의 API 연결 함수로 넘기고 입력 상태를 정리합니다.
   async function submitRevision(instruction) {
     const trimmedInstruction = instruction.trim();
 
@@ -777,15 +827,28 @@ function BlueprintAssistantChat({ blueprint, canRevise, isOpen, isRevising, onRe
     }
 
     setChatStatus("");
+    setChatNotice(null);
     setPendingInstruction(trimmedInstruction);
 
     try {
       await onRevise(trimmedInstruction);
       setMessage("");
       setPendingInstruction("");
-      setChatStatus("수정 요청을 반영했습니다.");
+      setChatNotice({
+        tone: "success",
+        title: "수정 요청을 반영했어요.",
+        message: "변경된 설계도를 결과 화면에 다시 정리해뒀습니다.",
+      });
     } catch (err) {
-      setChatStatus(err.message);
+      if (err.status === 409) {
+        setChatNotice({
+          tone: "info",
+          title: "이미 반영된 요청이에요.",
+          message: "같은 기능은 다시 생성하지 않았어요. 다른 변경사항을 입력해 주세요.",
+        });
+      } else {
+        setChatStatus(err.message);
+      }
     } finally {
       setPendingInstruction("");
     }
@@ -846,6 +909,13 @@ function BlueprintAssistantChat({ blueprint, canRevise, isOpen, isRevising, onRe
                 </button>
               ))}
             </div>
+
+            {chatNotice && (
+              <div className={`assistant-message bot ${chatNotice.tone}`}>
+                <strong>{chatNotice.title}</strong>
+                <p>{chatNotice.message}</p>
+              </div>
+            )}
 
             {chatStatus && <p className="assistant-chat-status">{chatStatus}</p>}
           </div>
