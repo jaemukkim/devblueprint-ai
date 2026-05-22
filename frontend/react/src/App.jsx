@@ -81,17 +81,30 @@ mermaid.initialize({
   securityLevel: "loose",
 });
 
+function normalizeMermaidSource(source) {
+  if (!source.trim().startsWith("erDiagram")) {
+    return source;
+  }
+
+  // 저장된 이전 설계도에 남아 있을 수 있는 Mermaid 비호환 key token을 렌더링 전에 보정합니다.
+  return source
+    .split("\n")
+    .map((line) => line.replace(/\bUNIQUE\b/g, "UK"))
+    .join("\n");
+}
+
 function MermaidDiagram({ source }) {
   const [svg, setSvg] = useState("");
   const [error, setError] = useState("");
   const [view, setView] = useState("diagram");
+  const renderSource = useMemo(() => normalizeMermaidSource(source), [source]);
 
   useEffect(() => {
     let mounted = true;
     const id = `diagram-${crypto.randomUUID()}`;
 
     mermaid
-      .render(id, source)
+      .render(id, renderSource)
       .then((result) => {
         if (mounted) {
           setSvg(result.svg);
@@ -108,7 +121,7 @@ function MermaidDiagram({ source }) {
     return () => {
       mounted = false;
     };
-  }, [source]);
+  }, [renderSource]);
 
   return (
     <div className="diagram-panel">
@@ -121,7 +134,7 @@ function MermaidDiagram({ source }) {
         </button>
       </div>
       {view === "code" ? (
-        <pre className="code-block">{source}</pre>
+        <pre className="code-block">{renderSource}</pre>
       ) : error ? (
         <pre className="diagram-error">{error}</pre>
       ) : (

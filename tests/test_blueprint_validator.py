@@ -211,6 +211,23 @@ def test_validate_blueprint_quality_accepts_uppercase_erd_table_names() -> None:
     validate_blueprint_quality(blueprint)
 
 
+def test_validate_blueprint_quality_rejects_unique_erd_key_token() -> None:
+    blueprint = make_valid_blueprint()
+    blueprint.database_erd = (
+        "erDiagram\n"
+        "  test_items {\n"
+        "    uuid id PK\n"
+        "    varchar external_id UNIQUE\n"
+        "    timestamp created_at\n"
+        "  }\n"
+        "  test_item_events ||--o{ test_items : belongs_to\n"
+        "  test_item_results ||--o{ test_items : belongs_to"
+    )
+
+    with pytest.raises(BlueprintGenerationError, match="UK"):
+        validate_blueprint_quality(blueprint)
+
+
 def test_validate_blueprint_quality_rejects_invalid_sequence_diagram() -> None:
     blueprint = make_valid_blueprint()
     blueprint.sequence_diagram = "flowchart TD\n  A --> B"

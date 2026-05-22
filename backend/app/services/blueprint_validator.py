@@ -16,6 +16,7 @@ GENERIC_FEATURE_NAMES = {
 }
 MIN_FEATURE_DESCRIPTION_LENGTH = 20
 MIN_TABLE_COLUMN_COUNT = 3
+MERMAID_ERD_KEY_TOKENS = {"PK", "FK", "UK"}
 
 
 def collect_blueprint_quality_errors(blueprint: BlueprintResponse) -> list[str]:
@@ -147,6 +148,41 @@ def validate_database_erd(blueprint: BlueprintResponse, errors: list[str]) -> No
 
     for table_name in missing_tables:
         errors.append(f"database_erd must include table from database_schema: {table_name}")
+
+    validate_erd_attribute_keys(erd, errors)
+
+
+def validate_erd_attribute_keys(erd: str, errors: list[str]) -> None:
+    """Mermaid ERD 속성 줄에서 렌더링 가능한 key token만 쓰는지 확인합니다."""
+    in_entity_block = False
+
+    for line in erd.splitlines():
+        stripped_line = line.strip()
+
+        if not stripped_line or stripped_line == "erDiagram":
+            continue
+
+        if stripped_line.endswith("{"):
+            in_entity_block = True
+            continue
+
+        if stripped_line == "}":
+            in_entity_block = False
+            continue
+
+        if not in_entity_block:
+            continue
+
+        tokens = stripped_line.split()
+        if len(tokens) < 3:
+            continue
+
+        for token in tokens[2:]:
+            normalized_token = token.strip(",").upper()
+            if normalized_token in MERMAID_ERD_KEY_TOKENS:
+                continue
+            if normalized_token == "UNIQUE":
+                errors.append("database_erd must use Mermaid key token 'UK' instead of 'UNIQUE'")
 
 
 def validate_sequence_diagram(blueprint: BlueprintResponse, errors: list[str]) -> None:

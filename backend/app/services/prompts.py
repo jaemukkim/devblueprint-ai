@@ -19,6 +19,7 @@ Follow these rules:
 - Recommend 4 to 8 REST API endpoints.
 - Recommend 3 to 6 database tables. If persistence is not required for the MVP, provide future-friendly schema suggestions.
 - Return database_erd as a valid Mermaid erDiagram that matches database_schema.
+- In Mermaid erDiagram entity attributes, use only PK, FK, and UK key tokens. Use UK for unique columns, not UNIQUE.
 - Include enough detail for a developer to understand the first implementation plan.
 - Every API path must start with "/" and use REST-style lowercase paths.
 - API paths must be domain-specific resources from the user's idea, not generic paths like /items unless the domain is actually generic inventory.
