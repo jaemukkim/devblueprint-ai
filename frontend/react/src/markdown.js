@@ -24,6 +24,26 @@ function formatColumns(columns) {
     .join("\n");
 }
 
+function formatConsiderations(items) {
+  if (!items?.length) {
+    return "- 없음";
+  }
+
+  return items
+    .map((item) => `- **${item.title}** \`${item.priority}\` (${item.category}): ${item.description}`)
+    .join("\n");
+}
+
+function formatImplementationPlan(steps) {
+  if (!steps?.length) {
+    return "- 없음";
+  }
+
+  return steps
+    .map((step) => `- **${step.phase}. ${step.title}**: ${step.description}`)
+    .join("\n");
+}
+
 export function blueprintToMarkdown(blueprint) {
   const lines = [
     "# DevBlueprint AI Result",
@@ -70,6 +90,15 @@ export function blueprintToMarkdown(blueprint) {
   });
 
   lines.push(
+    "## Non-functional Requirements",
+    formatConsiderations(blueprint.non_functional_requirements),
+    "",
+    "## Security Considerations",
+    formatConsiderations(blueprint.security_considerations),
+    "",
+    "## Implementation Plan",
+    formatImplementationPlan(blueprint.implementation_plan),
+    "",
     "## Database ERD",
     "```mermaid",
     blueprint.database_erd,

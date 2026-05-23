@@ -69,6 +69,19 @@ class DatabaseTable(BaseModel):
     columns: list[DatabaseColumn]
 
 
+class DesignConsideration(BaseModel):
+    category: str
+    title: str
+    description: str
+    priority: Literal["high", "medium", "low"]
+
+
+class ImplementationStep(BaseModel):
+    phase: str
+    title: str
+    description: str
+
+
 # API가 최종적으로 반환하는 전체 시스템 설계도 응답 모델입니다.
 # 이 구조가 LLM의 structured output 계약이 되므로 OpenAI 응답도 이 형태에 맞춥니다.
 class BlueprintResponse(BaseModel):
@@ -79,6 +92,9 @@ class BlueprintResponse(BaseModel):
     database_schema: list[DatabaseTable]
     database_erd: str
     sequence_diagram: str
+    non_functional_requirements: list[DesignConsideration] = Field(default_factory=list)
+    security_considerations: list[DesignConsideration] = Field(default_factory=list)
+    implementation_plan: list[ImplementationStep] = Field(default_factory=list)
 
 
 # 저장된 설계도 목록에서 보여줄 최소 정보입니다.

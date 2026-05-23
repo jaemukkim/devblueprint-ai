@@ -868,7 +868,8 @@ textarea:focus {
 
 .tab-panel,
 .summary-tab,
-.diagram-grid {
+.diagram-grid,
+.planning-grid {
   display: grid;
   gap: 14px;
 }
@@ -956,7 +957,7 @@ textarea:focus {
 
 .quality-grid {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 10px;
 }
 
@@ -998,6 +999,80 @@ textarea:focus {
   color: #607084;
   font-size: 12px;
   font-weight: 700;
+}
+
+.consideration-list,
+.implementation-list {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+}
+
+.consideration-item,
+.implementation-step {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+  color: var(--text);
+  padding: 15px;
+}
+
+.consideration-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.consideration-category {
+  border: 1px solid #dbe4f0;
+  border-radius: 999px;
+  background: #f8fbff;
+  color: #52657a;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1.25;
+  text-transform: uppercase;
+}
+
+.consideration-item h3,
+.implementation-step h3 {
+  color: #17202a;
+  line-height: 1.35;
+}
+
+.consideration-item p,
+.implementation-step p {
+  margin: 8px 0 0;
+  color: #33465f;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.implementation-step {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  gap: 14px;
+}
+
+.implementation-step > span {
+  display: inline-grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border: 1px solid #bfdbfe;
+  border-radius: 10px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.plan-empty {
+  margin: 0;
+  padding: 18px;
 }
 
 /* 설계도 수정 요청을 바로 열 수 있도록 화면 우하단에 고정되는 챗 위젯입니다. */

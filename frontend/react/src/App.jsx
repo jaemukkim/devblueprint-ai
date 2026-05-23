@@ -52,6 +52,7 @@ const RESULT_TABS = [
   { id: "api", label: "API" },
   { id: "database", label: "DB" },
   { id: "diagrams", label: "다이어그램" },
+  { id: "plan", label: "계획" },
 ];
 
 // 생성 대기 화면에서 순차적으로 보여줄 작업 단계입니다.
@@ -768,6 +769,22 @@ function BlueprintView({ activeTab, blueprint, setActiveTab }) {
             </Section>
           </div>
         )}
+
+        {activeTab === "plan" && (
+          <div className="planning-grid">
+            <Section title="비기능 요구사항" description="MVP를 실제 서비스로 다듬을 때 먼저 확인할 운영 품질 기준입니다.">
+              <DesignConsiderationList items={blueprint.non_functional_requirements || []} />
+            </Section>
+
+            <Section title="보안 고려사항" description="입력, 권한, 비밀값, 남용 방지 관점의 구현 체크포인트입니다.">
+              <DesignConsiderationList items={blueprint.security_considerations || []} />
+            </Section>
+
+            <Section title="구현 계획" description="개발자가 순서대로 진행할 수 있는 단계별 실행 계획입니다.">
+              <ImplementationPlan steps={blueprint.implementation_plan || []} />
+            </Section>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -806,6 +823,13 @@ function buildQualityItems(blueprint) {
       value: "Mermaid 통과",
       passed: blueprint.database_erd.startsWith("erDiagram") && blueprint.sequence_diagram.startsWith("sequenceDiagram"),
     },
+    {
+      label: "운영 계획",
+      value: `${blueprint.implementation_plan?.length || 0}개 단계`,
+      passed: (blueprint.non_functional_requirements?.length || 0) >= 3
+        && (blueprint.security_considerations?.length || 0) >= 3
+        && (blueprint.implementation_plan?.length || 0) >= 3,
+    },
   ];
 }
 
@@ -835,6 +859,47 @@ function QualityChecks({ items }) {
         ))}
       </div>
     </section>
+  );
+}
+// 비기능 요구사항과 보안 고려사항을 렌더링하는 컴포넌트입니다.
+function DesignConsiderationList({ items }) {
+  if (!items.length) {
+    return <p className="empty-text plan-empty">아직 정리된 항목이 없습니다.</p>;
+  }
+
+  return (
+    <div className="consideration-list">
+      {items.map((item) => (
+        <article className="consideration-item" key={`${item.category}-${item.title}`}>
+          <div className="consideration-heading">
+            <span className={`priority ${item.priority}`}>{item.priority}</span>
+            <span className="consideration-category">{item.category}</span>
+          </div>
+          <h3>{item.title}</h3>
+          <p>{item.description}</p>
+        </article>
+      ))}
+    </div>
+  );
+}
+// 구현 계획을 렌더링하는 컴포넌트입니다.
+function ImplementationPlan({ steps }) {
+  if (!steps.length) {
+    return <p className="empty-text plan-empty">아직 정리된 구현 단계가 없습니다.</p>;
+  }
+
+  return (
+    <div className="implementation-list">
+      {steps.map((step) => (
+        <article className="implementation-step" key={`${step.phase}-${step.title}`}>
+          <span>{step.phase}</span>
+          <div>
+            <h3>{step.title}</h3>
+            <p>{step.description}</p>
+          </div>
+        </article>
+      ))}
+    </div>
   );
 }
 

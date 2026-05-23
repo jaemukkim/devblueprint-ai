@@ -3,6 +3,7 @@ from fastapi.testclient import TestClient
 from app.core.config import settings
 from app.main import app
 from app.repositories.blueprint_repository import blueprint_repository
+from app.schemas.blueprint import BlueprintResponse
 
 
 client = TestClient(app)
@@ -51,6 +52,29 @@ def test_generate_blueprint_returns_expected_shape(monkeypatch) -> None:
     assert data["database_schema"][0]["columns"][0]["constraints"] == ["primary_key"]
     assert data["database_erd"].startswith("erDiagram")
     assert data["sequence_diagram"].startswith("sequenceDiagram")
+    assert len(data["non_functional_requirements"]) >= 3
+    assert len(data["security_considerations"]) >= 3
+    assert len(data["implementation_plan"]) >= 3
+
+
+def test_blueprint_response_accepts_legacy_saved_result_without_planning_fields(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "use_openai", False)
+    blueprint_repository.clear()
+
+    create_response = client.post(
+        "/api/v1/blueprint/generate",
+        json={"idea": "레거시 저장 설계도 호환성 테스트 서비스"},
+    )
+    legacy_result = create_response.json()
+    legacy_result.pop("non_functional_requirements")
+    legacy_result.pop("security_considerations")
+    legacy_result.pop("implementation_plan")
+
+    parsed_result = BlueprintResponse.model_validate(legacy_result)
+
+    assert parsed_result.non_functional_requirements == []
+    assert parsed_result.security_considerations == []
+    assert parsed_result.implementation_plan == []
 
 
 def test_generate_blueprint_rejects_short_idea() -> None:

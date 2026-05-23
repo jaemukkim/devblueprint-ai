@@ -26,7 +26,12 @@ def collect_blueprint_quality_errors(blueprint: BlueprintResponse) -> list[str]:
     validate_collection_size("features", blueprint.features, 5, 8, errors)
     validate_collection_size("api_spec", blueprint.api_spec, 4, 8, errors)
     validate_collection_size("database_schema", blueprint.database_schema, 3, 6, errors)
+    validate_collection_size("non_functional_requirements", blueprint.non_functional_requirements, 3, 6, errors)
+    validate_collection_size("security_considerations", blueprint.security_considerations, 3, 6, errors)
+    validate_collection_size("implementation_plan", blueprint.implementation_plan, 3, 6, errors)
     validate_feature_quality(blueprint, errors)
+    validate_design_considerations(blueprint, errors)
+    validate_implementation_plan(blueprint, errors)
     validate_api_paths(blueprint, errors)
     validate_api_fields(blueprint, errors)
     validate_database_names(blueprint, errors)
@@ -89,6 +94,30 @@ def validate_feature_quality(blueprint: BlueprintResponse, errors: list[str]) ->
 
         if len(feature.description.strip()) < MIN_FEATURE_DESCRIPTION_LENGTH:
             errors.append(f"feature description is too short: {feature.name}")
+
+
+def validate_design_considerations(blueprint: BlueprintResponse, errors: list[str]) -> None:
+    """비기능/보안 항목이 제목만 있는 얕은 체크리스트가 되지 않도록 확인합니다."""
+    for group_name, items in [
+        ("non_functional_requirements", blueprint.non_functional_requirements),
+        ("security_considerations", blueprint.security_considerations),
+    ]:
+        for item in items:
+            if len(item.title.strip()) < 4:
+                errors.append(f"{group_name} title is too short: {item.title}")
+            if len(item.description.strip()) < MIN_FEATURE_DESCRIPTION_LENGTH:
+                errors.append(f"{group_name} description is too short: {item.title}")
+
+
+def validate_implementation_plan(blueprint: BlueprintResponse, errors: list[str]) -> None:
+    """구현 계획이 실제 순서와 설명을 가진 단계인지 확인합니다."""
+    for step in blueprint.implementation_plan:
+        if not step.phase.strip():
+            errors.append(f"implementation_plan phase must not be empty: {step.title}")
+        if len(step.title.strip()) < 4:
+            errors.append(f"implementation_plan title is too short: {step.title}")
+        if len(step.description.strip()) < MIN_FEATURE_DESCRIPTION_LENGTH:
+            errors.append(f"implementation_plan description is too short: {step.title}")
 
 
 def validate_api_fields(blueprint: BlueprintResponse, errors: list[str]) -> None:

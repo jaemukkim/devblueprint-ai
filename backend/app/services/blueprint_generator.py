@@ -7,7 +7,9 @@ from app.schemas.blueprint import (
     BlueprintResponse,
     DatabaseColumn,
     DatabaseTable,
+    DesignConsideration,
     Feature,
+    ImplementationStep,
     TechStack,
 )
 from app.services.blueprint_validator import collect_blueprint_quality_errors, validate_blueprint_quality
@@ -252,4 +254,66 @@ def build_placeholder_blueprint(payload: BlueprintRequest) -> BlueprintResponse:
   API-->>UI: 설계도 응답 반환
   UI-->>User: 결과 화면 표시
 """,
+        non_functional_requirements=[
+            DesignConsideration(
+                category="reliability",
+                title="생성 결과 재사용",
+                description="같은 아이디어 요청은 cache_key로 재사용해 불필요한 LLM 호출과 응답 변동을 줄입니다.",
+                priority="high",
+            ),
+            DesignConsideration(
+                category="observability",
+                title="생성 실패 추적",
+                description="OpenAI 호출 실패, 품질 검증 실패, 재시도 횟수를 로그로 남겨 운영 중 원인을 빠르게 확인합니다.",
+                priority="medium",
+            ),
+            DesignConsideration(
+                category="performance",
+                title="초기 화면 응답성",
+                description="무거운 다이어그램 렌더링은 결과 탭 진입 이후로 미뤄 초기 입력 화면을 빠르게 보여줍니다.",
+                priority="medium",
+            ),
+        ],
+        security_considerations=[
+            DesignConsideration(
+                category="input_validation",
+                title="아이디어 입력 검증",
+                description="너무 짧거나 비어 있는 입력은 API 단계에서 차단하고, LLM에는 정리된 문자열만 전달합니다.",
+                priority="high",
+            ),
+            DesignConsideration(
+                category="secret_management",
+                title="API key 보호",
+                description="OpenAI API key와 데이터베이스 접속 정보는 서버 환경변수로만 관리하고 프론트엔드 bundle에 포함하지 않습니다.",
+                priority="high",
+            ),
+            DesignConsideration(
+                category="abuse_prevention",
+                title="생성 요청 제한",
+                description="공개 서비스로 전환할 때는 IP 또는 사용자 단위 rate limit을 적용해 비용 폭증과 자동화 남용을 막습니다.",
+                priority="medium",
+            ),
+        ],
+        implementation_plan=[
+            ImplementationStep(
+                phase="1",
+                title="핵심 생성 API 구현",
+                description="아이디어 입력, structured output 생성, Pydantic 검증, placeholder 개발 모드를 먼저 완성합니다.",
+            ),
+            ImplementationStep(
+                phase="2",
+                title="저장소와 조회 흐름 연결",
+                description="in-memory와 PostgreSQL repository를 분리하고 생성, 목록, 상세, 삭제 API를 같은 계약으로 제공합니다.",
+            ),
+            ImplementationStep(
+                phase="3",
+                title="결과 화면과 수정 요청 UX 완성",
+                description="React 탭 화면, Mermaid 다이어그램, Markdown 다운로드, 챗봇 수정 요청 흐름을 통합합니다.",
+            ),
+            ImplementationStep(
+                phase="4",
+                title="운영 준비 점검",
+                description="CORS, 환경변수, 오류 안내, 요청 제한, 빌드 크기, 테스트 자동화를 확인한 뒤 배포 후보를 정리합니다.",
+            ),
+        ],
     )

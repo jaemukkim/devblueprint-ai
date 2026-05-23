@@ -6,7 +6,9 @@ from app.schemas.blueprint import (
     BlueprintResponse,
     DatabaseColumn,
     DatabaseTable,
+    DesignConsideration,
     Feature,
+    ImplementationStep,
     TechStack,
 )
 from app.services.blueprint_generator import generate_blueprint_with_retry
@@ -47,6 +49,9 @@ def make_blueprint(api_path: str = "/api/v1/books") -> BlueprintResponse:
             "  test_items ||--o{ test_item_results : has"
         ),
         sequence_diagram="sequenceDiagram\n  participant User\n  User->>User: 테스트",
+        non_functional_requirements=make_design_considerations("reliability"),
+        security_considerations=make_design_considerations("security"),
+        implementation_plan=make_implementation_plan(),
     )
 
 
@@ -99,6 +104,29 @@ def make_database_table(name: str) -> DatabaseTable:
             ),
         ],
     )
+
+
+def make_design_considerations(category: str) -> list[DesignConsideration]:
+    return [
+        DesignConsideration(
+            category=category,
+            title=f"{category} 항목 {index}",
+            description=f"{category} 관점에서 실제 구현 전에 확인해야 하는 설계 고려사항입니다.",
+            priority="medium",
+        )
+        for index in range(1, 4)
+    ]
+
+
+def make_implementation_plan() -> list[ImplementationStep]:
+    return [
+        ImplementationStep(
+            phase=str(index),
+            title=f"구현 단계 {index}",
+            description="개발자가 순서대로 진행할 수 있는 충분한 구현 단계 설명입니다.",
+        )
+        for index in range(1, 4)
+    ]
 
 
 def test_generate_blueprint_with_retry_returns_second_valid_result(monkeypatch) -> None:

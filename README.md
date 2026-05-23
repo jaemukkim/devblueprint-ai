@@ -18,6 +18,7 @@ DevBlueprint AI는 자연어로 작성한 서비스 아이디어를 개발자가
 - 다크 랜딩 히어로 + 실제 설계도 생성 앱 화면
 - 최근 설계도 카드 목록, 상세 열기, 삭제
 - 결과 탭: 요약 / 기능 / API / DB / 다이어그램
+- 비기능 요구사항, 보안 고려사항, 구현 계획을 포함한 계획 탭
 - Markdown 다운로드
 - Mermaid ERD 및 sequence diagram 렌더링
 - Mermaid 동적 로딩으로 초기 React bundle 크기 절감
@@ -187,7 +188,7 @@ python -m pytest
 최근 확인 결과:
 
 ```text
-33 passed
+36 passed
 ```
 
 React 빌드 확인:

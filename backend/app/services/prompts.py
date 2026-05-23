@@ -1,7 +1,7 @@
 from app.schemas.blueprint import BlueprintRequest, BlueprintResponse
 
 
-BLUEPRINT_PROMPT_VERSION = "quality-v3"
+BLUEPRINT_PROMPT_VERSION = "quality-v4"
 
 
 # 시스템 프롬프트는 모델의 역할과 설계 품질 기준을 고정합니다.
@@ -18,6 +18,9 @@ Follow these rules:
 - Recommend 5 to 8 core features.
 - Recommend 4 to 8 REST API endpoints.
 - Recommend 3 to 6 database tables. If persistence is not required for the MVP, provide future-friendly schema suggestions.
+- Include 3 to 6 non-functional requirements covering reliability, performance, observability, scalability, accessibility, or maintainability.
+- Include 3 to 6 security considerations covering authentication, authorization, data validation, privacy, audit logging, rate limiting, or abuse prevention when relevant.
+- Include 3 to 6 implementation plan steps that a developer could follow in order.
 - Return database_erd as a valid Mermaid erDiagram that matches database_schema.
 - In Mermaid erDiagram entity attributes, use only PK, FK, and UK key tokens. Use UK for unique columns, not UNIQUE.
 - Include enough detail for a developer to understand the first implementation plan.
@@ -53,6 +56,9 @@ Make every feature, API endpoint, table, ERD relationship, and sequence step spe
 For each feature, describe the concrete user action or backend responsibility it enables.
 For each API endpoint, include realistic request and response fields that a frontend developer could wire directly.
 For each database table, include columns that support the proposed APIs and features.
+For non_functional_requirements, avoid generic advice and explain concrete engineering constraints for this product.
+For security_considerations, include only relevant risks and mitigations for the service idea.
+For implementation_plan, describe sequential milestones from first backend/API slice to UI, persistence, validation, and release readiness.
 Use resource names that clearly reveal the product domain, such as books, reading_logs, reservations, chat_rooms, posts, or trades.
 Avoid one-column tables and avoid API endpoints that cannot be mapped to any feature or table.
 """
@@ -78,5 +84,6 @@ Current blueprint JSON:
 
 Return the full revised blueprint, not a partial patch.
 Keep any useful parts of the current blueprint, but update every affected feature, API endpoint, database table, ERD relationship, and sequence step so the final result is internally consistent.
+Also update non_functional_requirements, security_considerations, and implementation_plan when the revision changes scope, user roles, data sensitivity, or operational risk.
 Do not mention that this is a revision in the overview unless it helps explain the service.
 """
