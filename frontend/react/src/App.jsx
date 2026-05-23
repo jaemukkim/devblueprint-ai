@@ -21,7 +21,6 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import mermaid from "mermaid";
 
 import { createBlueprint, deleteBlueprint, getBlueprint, listBlueprints, reviseBlueprint } from "./api.js";
 import { downloadMarkdown } from "./markdown.js";
@@ -75,11 +74,24 @@ const REVISION_STEPS = [
 
 const GENERATION_FEEDBACK_MIN_MS = 600;
 
-mermaid.initialize({
-  startOnLoad: false,
-  theme: "default",
-  securityLevel: "loose",
-});
+let mermaidLoadPromise = null;
+
+// 다이어그램 탭이 실제로 열릴 때만 Mermaid를 불러와 초기 번들 크기를 줄입니다.
+function loadMermaid() {
+  if (!mermaidLoadPromise) {
+    mermaidLoadPromise = import("mermaid").then((module) => {
+      const mermaid = module.default;
+      mermaid.initialize({
+        startOnLoad: false,
+        theme: "default",
+        securityLevel: "loose",
+      });
+      return mermaid;
+    });
+  }
+
+  return mermaidLoadPromise;
+}
 
 function normalizeMermaidSource(source) {
   if (!source.trim().startsWith("erDiagram")) {
@@ -103,8 +115,10 @@ function MermaidDiagram({ source }) {
     let mounted = true;
     const id = `diagram-${crypto.randomUUID()}`;
 
-    mermaid
-      .render(id, renderSource)
+    setError("");
+
+    loadMermaid()
+      .then((mermaid) => mermaid.render(id, renderSource))
       .then((result) => {
         if (mounted) {
           setSvg(result.svg);
@@ -854,7 +868,18 @@ function BlueprintAssistantChat({ blueprint, canRevise, isOpen, isRevising, onRe
     };
   }, [isRevising]);
 
-  // 사용자의 수정 요청을 부모 컴포넌트의 API 연결 함수로 넘기고 입력 상태를 정리합니다.
+  useEffect(() => {
+    if (blueprint && canRevise) {
+      return;
+    }
+
+    setMessage("");
+    setChatStatus("");
+    setChatNotice(null);
+    setPendingInstruction("");
+    setRevisionStepIndex(0);
+  }, [blueprint, canRevise]);
+
   // 사용자의 수정 요청을 부모 컴포넌트의 API 연결 함수로 넘기고 입력 상태를 정리합니다.
   async function submitRevision(instruction) {
     const trimmedInstruction = instruction.trim();

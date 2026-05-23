@@ -20,11 +20,13 @@ DevBlueprint AI는 자연어로 작성한 서비스 아이디어를 개발자가
 - 결과 탭: 요약 / 기능 / API / DB / 다이어그램
 - Markdown 다운로드
 - Mermaid ERD 및 sequence diagram 렌더링
+- Mermaid 동적 로딩으로 초기 React bundle 크기 절감
 - 설계도 수정 요청 챗봇 UI
 - 챗봇 수정 요청 기반 새 설계도 생성
 - 중복 수정 요청 방지 및 사용자 안내
 - 최근 설계도 목록의 초안/개선안 구분
 - 수정 요청 요약 표시
+- 설계도 삭제는 현재 실제 삭제(hard delete) 정책 유지
 - Streamlit MVP 화면은 `frontend/streamlit/`에 보관
 
 ## 프로젝트 구조
@@ -185,7 +187,7 @@ python -m pytest
 최근 확인 결과:
 
 ```text
-32 passed
+33 passed
 ```
 
 React 빌드 확인:
@@ -194,6 +196,14 @@ React 빌드 확인:
 cd frontend/react
 npm run build
 ```
+
+PowerShell 실행 정책 때문에 `npm.ps1`이 막히는 환경에서는 아래처럼 `npm.cmd`를 사용합니다.
+
+```powershell
+npm.cmd run build
+```
+
+현재 React 빌드는 통과합니다. Mermaid는 다이어그램 탭에서만 동적 로딩되도록 분리되어 초기 앱 chunk는 줄었지만, Mermaid 자체 lazy chunk가 500 kB를 넘기 때문에 Vite의 chunk size 경고는 남을 수 있습니다. 이 경고는 빌드 실패가 아닙니다.
 
 ## 설계 흐름
 
@@ -226,6 +236,8 @@ Saved Blueprint
 
 수정 요청으로 생성된 설계도는 원본 idea를 유지하고, `revision_instruction`에 사용자의 수정 요청 원문을 저장합니다. React 최근 설계도 카드에서는 `초안`, `개선안 1`, `개선안 2`처럼 구분하고, 수정 요청은 한 줄 요약으로 표시합니다.
 
+현재 삭제 API는 저장된 설계도를 실제로 삭제합니다. `deleted_at` 기반 소프트 삭제는 보류하고 hard delete 정책을 유지합니다.
+
 ## 예시 결과
 
 - [호텔 예약 서비스](docs/examples/hotel_reservation_blueprint.md)
@@ -233,9 +245,7 @@ Saved Blueprint
 
 ## 다음 작업 후보
 
-- React 화면 브라우저에서 실제 생성/조회/수정/삭제 흐름 확인
-- 최근 설계도 카드에서 긴 제목/긴 수정 요청이 들어간 경우 UI 확인
-- 챗봇 수정 요청 성공 후 결과 영역 자동 이동/강조 UX 검토
-- 삭제를 실제 삭제로 유지할지, `deleted_at` 기반 소프트 삭제로 바꿀지 결정
-- Mermaid 번들 크기 개선 검토
 - README 스크린샷 추가
+- 모바일 실제 기기에서 생성/조회/수정/삭제 흐름 확인
+- 챗봇 수정 요청 성공 후 결과 영역 자동 이동/강조 UX 검토
+- Mermaid lazy chunk 추가 최적화 또는 Vite manualChunks 설정 검토
