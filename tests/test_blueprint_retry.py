@@ -3,15 +3,22 @@ import pytest
 from app.schemas.blueprint import (
     ApiField,
     ApiSpec,
+    ApiDesign,
     BlueprintResponse,
     DatabaseColumn,
+    DatabaseDesign,
     DatabaseTable,
     DesignConsideration,
+    DiagramDesign,
     Feature,
+    FeatureDesign,
+    IdeaAnalysis,
     ImplementationStep,
+    PlanningDesign,
     TechStack,
 )
-from app.services.blueprint_generator import generate_blueprint_with_retry
+from app.schemas.blueprint import BlueprintRequest
+from app.services.blueprint_generator import generate_blueprint_pipeline_with_retry, generate_blueprint_with_retry
 from app.services.llm_client import BlueprintGenerationError
 
 
@@ -161,3 +168,55 @@ def test_generate_blueprint_with_retry_fails_after_max_attempts(monkeypatch) -> 
 
     with pytest.raises(BlueprintGenerationError, match="재시도에 실패"):
         generate_blueprint_with_retry("테스트 프롬프트")
+
+
+def test_generate_blueprint_pipeline_assembles_section_outputs(monkeypatch) -> None:
+    section_outputs = [
+        IdeaAnalysis(
+            service_summary="독서 기록 서비스입니다.",
+            target_users=["독서 사용자"],
+            core_entities=["books", "reading_logs"],
+            mvp_scope=["도서 기록"],
+            out_of_scope=["결제"],
+        ),
+        FeatureDesign(
+            overview="테스트용 설계도입니다.",
+            features=make_blueprint().features,
+            tech_stack=make_blueprint().tech_stack,
+        ),
+        ApiDesign(api_spec=make_blueprint().api_spec),
+        DatabaseDesign(database_schema=make_blueprint().database_schema),
+        DiagramDesign(
+            database_erd=make_blueprint().database_erd,
+            sequence_diagram=make_blueprint().sequence_diagram,
+        ),
+        PlanningDesign(
+            non_functional_requirements=make_design_considerations("reliability"),
+            security_considerations=make_design_considerations("security"),
+            implementation_plan=make_implementation_plan(),
+        ),
+    ]
+    requested_formats = []
+
+    def fake_request_structured_output(user_prompt, text_format, validation_feedback=None):
+        requested_formats.append(text_format)
+        return section_outputs.pop(0)
+
+    monkeypatch.setattr(
+        "app.services.blueprint_generator.request_structured_output_from_openai",
+        fake_request_structured_output,
+    )
+
+    result = generate_blueprint_pipeline_with_retry(BlueprintRequest(idea="독서 기록 서비스"))
+
+    assert result.overview == "테스트용 설계도입니다."
+    assert result.api_spec[0].path == "/api/v1/books"
+    assert len(result.non_functional_requirements) == 3
+    assert requested_formats == [
+        IdeaAnalysis,
+        FeatureDesign,
+        ApiDesign,
+        DatabaseDesign,
+        DiagramDesign,
+        PlanningDesign,
+    ]

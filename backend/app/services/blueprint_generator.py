@@ -3,18 +3,37 @@ from app.repositories.blueprint_repository import StoredBlueprint, blueprint_rep
 from app.schemas.blueprint import (
     ApiField,
     ApiSpec,
+    ApiDesign,
     BlueprintRequest,
     BlueprintResponse,
     DatabaseColumn,
+    DatabaseDesign,
     DatabaseTable,
     DesignConsideration,
+    DiagramDesign,
     Feature,
+    FeatureDesign,
+    IdeaAnalysis,
     ImplementationStep,
+    PlanningDesign,
     TechStack,
 )
 from app.services.blueprint_validator import collect_blueprint_quality_errors, validate_blueprint_quality
-from app.services.llm_client import BlueprintGenerationError, request_blueprint_from_openai
-from app.services.prompts import BLUEPRINT_PROMPT_VERSION, build_blueprint_prompt, build_blueprint_revision_prompt
+from app.services.llm_client import (
+    BlueprintGenerationError,
+    request_blueprint_from_openai,
+    request_structured_output_from_openai,
+)
+from app.services.prompts import (
+    BLUEPRINT_PROMPT_VERSION,
+    build_api_design_prompt,
+    build_blueprint_revision_prompt,
+    build_database_design_prompt,
+    build_diagram_design_prompt,
+    build_feature_design_prompt,
+    build_idea_analysis_prompt,
+    build_planning_design_prompt,
+)
 
 
 MAX_OPENAI_GENERATION_ATTEMPTS = 3
@@ -53,8 +72,7 @@ def generate_blueprint(payload: BlueprintRequest) -> BlueprintResponse:
     if not settings.use_openai:
         blueprint = build_placeholder_blueprint(payload)
     else:
-        user_prompt = build_blueprint_prompt(payload)
-        blueprint = generate_blueprint_with_retry(user_prompt)
+        blueprint = generate_blueprint_pipeline_with_retry(payload)
 
     validate_blueprint_quality(blueprint)
     blueprint_repository.save(cache_key, blueprint, idea=payload.idea.strip())
@@ -103,6 +121,88 @@ def generate_blueprint_with_retry(user_prompt: str) -> BlueprintResponse:
 
     joined_errors = "; ".join(last_errors)
     raise BlueprintGenerationError(f"설계도 품질 검증 재시도에 실패했습니다: {joined_errors}")
+
+
+def generate_blueprint_pipeline_with_retry(payload: BlueprintRequest) -> BlueprintResponse:
+    """섹션별 OpenAI 생성 결과를 조립하고 전체 품질 검증에 실패하면 파이프라인을 재시도합니다."""
+    validation_feedback: list[str] | None = None
+    last_errors: list[str] = []
+
+    for _ in range(MAX_OPENAI_GENERATION_ATTEMPTS):
+        blueprint = generate_blueprint_pipeline(payload, validation_feedback)
+        errors = collect_blueprint_quality_errors(blueprint)
+
+        if not errors:
+            return blueprint
+
+        last_errors = errors
+        validation_feedback = errors
+
+    joined_errors = "; ".join(last_errors)
+    raise BlueprintGenerationError(f"섹션별 설계도 품질 검증 재시도에 실패했습니다: {joined_errors}")
+
+
+def generate_blueprint_pipeline(
+    payload: BlueprintRequest,
+    validation_feedback: list[str] | None = None,
+) -> BlueprintResponse:
+    """서비스 분석부터 계획까지 작은 structured output 단계로 나누어 설계도를 생성합니다."""
+    idea = payload.idea.strip()
+
+    analysis = request_structured_output_from_openai(
+        build_idea_analysis_prompt(payload),
+        IdeaAnalysis,
+        validation_feedback=validation_feedback,
+    )
+    feature_design = request_structured_output_from_openai(
+        build_feature_design_prompt(idea, analysis),
+        FeatureDesign,
+        validation_feedback=validation_feedback,
+    )
+    api_design = request_structured_output_from_openai(
+        build_api_design_prompt(idea, analysis, feature_design),
+        ApiDesign,
+        validation_feedback=validation_feedback,
+    )
+    database_design = request_structured_output_from_openai(
+        build_database_design_prompt(idea, analysis, feature_design, api_design),
+        DatabaseDesign,
+        validation_feedback=validation_feedback,
+    )
+    diagram_design = request_structured_output_from_openai(
+        build_diagram_design_prompt(idea, analysis, api_design, database_design),
+        DiagramDesign,
+        validation_feedback=validation_feedback,
+    )
+    planning_design = request_structured_output_from_openai(
+        build_planning_design_prompt(idea, analysis, feature_design, api_design, database_design),
+        PlanningDesign,
+        validation_feedback=validation_feedback,
+    )
+
+    return assemble_blueprint(feature_design, api_design, database_design, diagram_design, planning_design)
+
+
+def assemble_blueprint(
+    feature_design: FeatureDesign,
+    api_design: ApiDesign,
+    database_design: DatabaseDesign,
+    diagram_design: DiagramDesign,
+    planning_design: PlanningDesign,
+) -> BlueprintResponse:
+    """섹션별 생성 결과를 기존 API 응답 계약인 BlueprintResponse로 조립합니다."""
+    return BlueprintResponse(
+        overview=feature_design.overview,
+        features=feature_design.features,
+        tech_stack=feature_design.tech_stack,
+        api_spec=api_design.api_spec,
+        database_schema=database_design.database_schema,
+        database_erd=diagram_design.database_erd,
+        sequence_diagram=diagram_design.sequence_diagram,
+        non_functional_requirements=planning_design.non_functional_requirements,
+        security_considerations=planning_design.security_considerations,
+        implementation_plan=planning_design.implementation_plan,
+    )
 
 
 def normalize_idea(idea: str) -> str:

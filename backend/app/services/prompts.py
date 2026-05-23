@@ -1,7 +1,7 @@
 from app.schemas.blueprint import BlueprintRequest, BlueprintResponse
 
 
-BLUEPRINT_PROMPT_VERSION = "quality-v4"
+BLUEPRINT_PROMPT_VERSION = "quality-v5-pipeline"
 
 
 # 시스템 프롬프트는 모델의 역할과 설계 품질 기준을 고정합니다.
@@ -64,6 +64,133 @@ Avoid one-column tables and avoid API endpoints that cannot be mapped to any fea
 """
 
 
+def build_idea_analysis_prompt(payload: BlueprintRequest) -> str:
+    """섹션별 생성을 시작하기 전에 서비스의 도메인과 MVP 경계를 먼저 정리합니다."""
+    return f"""
+Analyze the following service idea before any detailed design work.
+
+Service idea:
+{payload.idea.strip()}
+
+Return the product domain, target users, core entities, MVP scope, and explicit out-of-scope items.
+Keep the analysis specific to this service idea.
+Write user-facing descriptions in Korean and keep technical identifiers in English where useful.
+"""
+
+
+def build_feature_design_prompt(idea: str, analysis: object) -> str:
+    """분석 결과를 바탕으로 기능과 기술 스택만 생성하도록 지시합니다."""
+    return f"""
+Design only the overview, core features, and recommended tech stack for this service.
+
+Service idea:
+{idea.strip()}
+
+Idea analysis JSON:
+{_dump_context(analysis)}
+
+Return 5 to 8 concrete MVP features and a practical tech stack.
+Do not design APIs, database tables, diagrams, security items, or implementation plan in this step.
+"""
+
+
+def build_api_design_prompt(idea: str, analysis: object, feature_design: object) -> str:
+    """확정된 기능 목록을 기준으로 API만 생성하도록 지시합니다."""
+    return f"""
+Design only the REST API endpoints for this service.
+
+Service idea:
+{idea.strip()}feat: 설계도 계획 섹션 추가feat: 설계도 계획 섹션 추가feat: 설계도 계획 섹션 추가feat: 설계도 계획 섹션 추가feat: 설계도 계획 섹션 추가feat: 설계도 계획 섹션 추가feat: 설계도 계획 섹션 추가
+
+Idea analysis JSON:
+{_dump_context(analysis)}
+
+Feature design JSON:
+{_dump_context(feature_design)}
+
+Return 4 to 8 domain-specific REST API endpoints.
+Each endpoint must map to the feature design and include realistic request and response fields.
+Do not design database tables, diagrams, security items, or implementation plan in this step.
+"""
+
+
+def build_database_design_prompt(idea: str, analysis: object, feature_design: object, api_design: object) -> str:
+    """기능과 API를 기준으로 DB schema만 생성하도록 지시합니다."""
+    return f"""
+Design only the database schema for this service.
+
+Service idea:
+{idea.strip()}
+
+Idea analysis JSON:
+{_dump_context(analysis)}
+
+Feature design JSON:
+{_dump_context(feature_design)}
+
+API design JSON:
+{_dump_context(api_design)}
+
+Return 3 to 6 PostgreSQL-friendly tables that support the proposed features and APIs.
+Use snake_case table and column names, practical primary keys, foreign keys, timestamps, status fields, and uniqueness constraints when relevant.
+Do not design Mermaid diagrams or implementation plan in this step.
+"""
+
+
+def build_diagram_design_prompt(idea: str, analysis: object, api_design: object, database_design: object) -> str:
+    """확정된 API와 DB를 기준으로 Mermaid 다이어그램만 생성하도록 지시합니다."""
+    return f"""
+Create only the Mermaid diagrams for this service.
+
+Service idea:
+{idea.strip()}
+
+Idea analysis JSON:
+{_dump_context(analysis)}
+
+API design JSON:
+{_dump_context(api_design)}
+
+Database design JSON:
+{_dump_context(database_design)}
+
+Return a valid Mermaid erDiagram that includes every database table.
+Return a valid Mermaid sequenceDiagram focused on the main user flow and major backend steps.
+Do not invent tables or endpoints that are not in the provided API and database design.
+"""
+
+
+def build_planning_design_prompt(
+    idea: str,
+    analysis: object,
+    feature_design: object,
+    api_design: object,
+    database_design: object,
+) -> str:
+    """설계 결과를 구현 가능한 계획과 운영 체크리스트로 보강합니다."""
+    return f"""
+Design only the implementation and operational planning sections for this service.
+
+Service idea:
+{idea.strip()}
+
+Idea analysis JSON:
+{_dump_context(analysis)}
+
+Feature design JSON:
+{_dump_context(feature_design)}
+
+API design JSON:
+{_dump_context(api_design)}
+
+Database design JSON:
+{_dump_context(database_design)}
+
+Return 3 to 6 non-functional requirements, 3 to 6 security considerations, and 3 to 6 ordered implementation steps.
+Make every item specific to this service and avoid generic advice.
+"""
+
+
 def build_blueprint_revision_prompt(
     idea: str,
     current_blueprint: BlueprintResponse,
@@ -87,3 +214,10 @@ Keep any useful parts of the current blueprint, but update every affected featur
 Also update non_functional_requirements, security_considerations, and implementation_plan when the revision changes scope, user roles, data sensitivity, or operational risk.
 Do not mention that this is a revision in the overview unless it helps explain the service.
 """
+
+
+def _dump_context(value: object) -> str:
+    """다른 생성 단계의 Pydantic 결과를 다음 프롬프트에서 읽기 쉬운 JSON으로 전달합니다."""
+    if hasattr(value, "model_dump_json"):
+        return value.model_dump_json(indent=2)
+    return str(value)

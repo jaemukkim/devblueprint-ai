@@ -82,6 +82,39 @@ class ImplementationStep(BaseModel):
     description: str
 
 
+class IdeaAnalysis(BaseModel):
+    service_summary: str
+    target_users: list[str]
+    core_entities: list[str]
+    mvp_scope: list[str]
+    out_of_scope: list[str]
+
+
+class FeatureDesign(BaseModel):
+    overview: str
+    features: list[Feature]
+    tech_stack: TechStack
+
+
+class ApiDesign(BaseModel):
+    api_spec: list[ApiSpec]
+
+
+class DatabaseDesign(BaseModel):
+    database_schema: list[DatabaseTable]
+
+
+class DiagramDesign(BaseModel):
+    database_erd: str
+    sequence_diagram: str
+
+
+class PlanningDesign(BaseModel):
+    non_functional_requirements: list[DesignConsideration]
+    security_considerations: list[DesignConsideration]
+    implementation_plan: list[ImplementationStep]
+
+
 # API가 최종적으로 반환하는 전체 시스템 설계도 응답 모델입니다.
 # 이 구조가 LLM의 structured output 계약이 되므로 OpenAI 응답도 이 형태에 맞춥니다.
 class BlueprintResponse(BaseModel):

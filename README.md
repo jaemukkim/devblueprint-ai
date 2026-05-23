@@ -8,6 +8,7 @@ DevBlueprint AI는 자연어로 작성한 서비스 아이디어를 개발자가
 
 - FastAPI 기반 설계도 생성 API
 - OpenAI Structured Outputs 기반 응답 schema 고정
+- OpenAI 모드에서 섹션별 생성 파이프라인 사용
 - `USE_OPENAI=false` 개발 모드 지원
 - 설계도 품질 검증 및 실패 시 feedback 기반 재시도
 - Repository 계층을 통한 저장 방식 분리
@@ -188,7 +189,7 @@ python -m pytest
 최근 확인 결과:
 
 ```text
-36 passed
+37 passed
 ```
 
 React 빌드 확인:
