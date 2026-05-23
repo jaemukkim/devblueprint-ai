@@ -39,16 +39,16 @@ def make_valid_blueprint() -> BlueprintResponse:
             make_api_spec("DELETE", "/api/v1/books/{book_id}"),
         ],
         database_schema=[
-            make_database_table("test_items"),
-            make_database_table("test_item_events"),
-            make_database_table("test_item_results"),
+            make_database_table("books"),
+            make_database_table("book_events"),
+            make_database_table("book_recommendations"),
         ],
         database_erd=(
             "erDiagram\n"
-            "  test_items ||--o{ test_item_events : has\n"
-            "  test_items ||--o{ test_item_results : has"
+            "  books ||--o{ book_events : has\n"
+            "  books ||--o{ book_recommendations : has"
         ),
-        sequence_diagram="sequenceDiagram\n  participant User\n  User->>User: 테스트",
+        sequence_diagram="sequenceDiagram\n  participant User\n  User->>API: POST /api/v1/books\n  API-->>User: books",
         non_functional_requirements=make_design_considerations("reliability"),
         security_considerations=make_design_considerations("security"),
         implementation_plan=make_implementation_plan(),
@@ -62,17 +62,17 @@ def make_api_spec(method: str, path: str) -> ApiSpec:
         description="테스트 API입니다.",
         request=[
             ApiField(
-                name="idea",
+                name="title",
                 type="string",
-                description="테스트 입력입니다.",
+                description="도서 제목 입력입니다.",
                 required=True,
             )
         ],
         response=[
             ApiField(
-                name="result",
+                name="title",
                 type="string",
-                description="테스트 응답입니다.",
+                description="저장된 도서 제목입니다.",
                 required=True,
             )
         ],
@@ -91,9 +91,9 @@ def make_database_table(name: str) -> DatabaseTable:
                 constraints=["primary_key"],
             ),
             DatabaseColumn(
-                name="created_at",
-                type="timestamp",
-                description="생성 시각입니다.",
+                name="title",
+                type="varchar",
+                description="도서 제목입니다.",
                 constraints=["not_null"],
             ),
             DatabaseColumn(
@@ -107,11 +107,17 @@ def make_database_table(name: str) -> DatabaseTable:
 
 
 def make_design_considerations(category: str) -> list[DesignConsideration]:
+    description = (
+        "인증과 권한, 개인정보 암호화 관점에서 실제 구현 전에 확인해야 하는 설계 고려사항입니다."
+        if category == "security"
+        else f"{category} 관점에서 실제 구현 전에 확인해야 하는 설계 고려사항입니다."
+    )
+
     return [
         DesignConsideration(
             category=category,
             title=f"{category} 항목 {index}",
-            description=f"{category} 관점에서 실제 구현 전에 확인해야 하는 설계 고려사항입니다.",
+            description=description,
             priority="medium",
         )
         for index in range(1, 4)
@@ -123,7 +129,7 @@ def make_implementation_plan() -> list[ImplementationStep]:
         ImplementationStep(
             phase=str(index),
             title=f"구현 단계 {index}",
-            description="개발자가 순서대로 진행할 수 있는 충분한 구현 단계 설명입니다.",
+            description="books API와 도서 데이터 모델을 기준으로 순서대로 진행하는 구현 단계 설명입니다.",
         )
         for index in range(1, 4)
     ]
@@ -234,8 +240,8 @@ def test_validate_blueprint_quality_rejects_erd_missing_schema_table() -> None:
     blueprint = make_valid_blueprint()
     blueprint.database_erd = (
         "erDiagram\n"
-        "  test_items ||--o{ test_item_events : has\n"
-        "  test_items {\n"
+        "  books ||--o{ book_events : has\n"
+        "  books {\n"
         "    uuid id PK\n"
         "  }"
     )
@@ -248,8 +254,8 @@ def test_validate_blueprint_quality_accepts_uppercase_erd_table_names() -> None:
     blueprint = make_valid_blueprint()
     blueprint.database_erd = (
         "erDiagram\n"
-        "  TEST_ITEMS ||--o{ TEST_ITEM_EVENTS : has\n"
-        "  TEST_ITEMS ||--o{ TEST_ITEM_RESULTS : has"
+        "  BOOKS ||--o{ BOOK_EVENTS : has\n"
+        "  BOOKS ||--o{ BOOK_RECOMMENDATIONS : has"
     )
 
     validate_blueprint_quality(blueprint)
@@ -259,13 +265,13 @@ def test_validate_blueprint_quality_rejects_unique_erd_key_token() -> None:
     blueprint = make_valid_blueprint()
     blueprint.database_erd = (
         "erDiagram\n"
-        "  test_items {\n"
+        "  books {\n"
         "    uuid id PK\n"
         "    varchar external_id UNIQUE\n"
         "    timestamp created_at\n"
         "  }\n"
-        "  test_item_events ||--o{ test_items : belongs_to\n"
-        "  test_item_results ||--o{ test_items : belongs_to"
+        "  book_events ||--o{ books : belongs_to\n"
+        "  book_recommendations ||--o{ books : belongs_to"
     )
 
     with pytest.raises(BlueprintGenerationError, match="UK"):
@@ -285,4 +291,56 @@ def test_validate_blueprint_quality_rejects_invalid_database_erd() -> None:
     blueprint.database_erd = "flowchart TD\n  A --> B"
 
     with pytest.raises(BlueprintGenerationError, match="database_erd"):
+        validate_blueprint_quality(blueprint)
+
+
+def test_validate_blueprint_quality_rejects_api_resource_missing_from_database() -> None:
+    blueprint = make_valid_blueprint()
+    blueprint.database_schema[0].name = "reading_logs"
+    blueprint.database_schema[1].name = "reading_events"
+    blueprint.database_schema[2].name = "reading_recommendations"
+    blueprint.database_erd = (
+        "erDiagram\n"
+        "  reading_logs ||--o{ reading_events : has\n"
+        "  reading_logs ||--o{ reading_recommendations : has"
+    )
+
+    with pytest.raises(BlueprintGenerationError, match="api resource must be represented"):
+        validate_blueprint_quality(blueprint)
+
+
+def test_validate_blueprint_quality_rejects_api_fields_detached_from_database_columns() -> None:
+    blueprint = make_valid_blueprint()
+    for api in blueprint.api_spec:
+        api.request[0].name = "summary"
+        api.response[0].name = "summary"
+
+    with pytest.raises(BlueprintGenerationError, match="api fields must overlap database columns"):
+        validate_blueprint_quality(blueprint)
+
+
+def test_validate_blueprint_quality_rejects_sequence_diagram_without_api_resource() -> None:
+    blueprint = make_valid_blueprint()
+    blueprint.sequence_diagram = "sequenceDiagram\n  participant User\n  User->>API: 요청\n  API-->>User: 응답"
+
+    with pytest.raises(BlueprintGenerationError, match="sequence_diagram must reference"):
+        validate_blueprint_quality(blueprint)
+
+
+def test_validate_blueprint_quality_rejects_plan_detached_from_generated_design() -> None:
+    blueprint = make_valid_blueprint()
+    for step in blueprint.implementation_plan:
+        step.description = "프로젝트 준비와 공통 개발 환경을 순서대로 구성하는 충분한 구현 단계 설명입니다."
+
+    with pytest.raises(BlueprintGenerationError, match="implementation_plan must reference"):
+        validate_blueprint_quality(blueprint)
+
+
+def test_validate_blueprint_quality_rejects_auth_scope_without_security_coverage() -> None:
+    blueprint = make_valid_blueprint()
+    blueprint.features[0].description = "사용자가 password login으로 독서 기록을 보호할 수 있게 합니다."
+    for item in blueprint.security_considerations:
+        item.description = "서비스 안정성과 입력값 검증을 기준으로 운영 위험을 줄이는 설계 고려사항입니다."
+
+    with pytest.raises(BlueprintGenerationError, match="authentication risks"):
         validate_blueprint_quality(blueprint)

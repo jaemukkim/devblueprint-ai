@@ -383,8 +383,8 @@ def build_placeholder_blueprint(payload: BlueprintRequest) -> BlueprintResponse:
             ),
             DesignConsideration(
                 category="secret_management",
-                title="API key 보호",
-                description="OpenAI API key와 데이터베이스 접속 정보는 서버 환경변수로만 관리하고 프론트엔드 bundle에 포함하지 않습니다.",
+                title="API key와 개인정보 보호",
+                description="OpenAI API key와 데이터베이스 접속 정보는 서버 환경변수로만 관리하고, 개인정보는 암호화와 최소 보관 원칙을 적용합니다.",
                 priority="high",
             ),
             DesignConsideration(
@@ -398,7 +398,7 @@ def build_placeholder_blueprint(payload: BlueprintRequest) -> BlueprintResponse:
             ImplementationStep(
                 phase="1",
                 title="핵심 생성 API 구현",
-                description="아이디어 입력, structured output 생성, Pydantic 검증, placeholder 개발 모드를 먼저 완성합니다.",
+                description="blueprint 아이디어 입력, structured output 생성, Pydantic 검증, placeholder 개발 모드를 먼저 완성합니다.",
             ),
             ImplementationStep(
                 phase="2",

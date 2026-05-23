@@ -5,6 +5,7 @@ from app.services.llm_client import BlueprintGenerationError
 
 
 SNAKE_CASE_PATTERN = re.compile(r"^[a-z][a-z0-9_]*$")
+TOKEN_PATTERN = re.compile(r"[a-z][a-z0-9_]*")
 GENERIC_API_RESOURCES = {"items", "records", "data", "results", "entities", "objects"}
 GENERIC_FEATURE_NAMES = {
     "아이디어 분석",
@@ -17,6 +18,13 @@ GENERIC_FEATURE_NAMES = {
 MIN_FEATURE_DESCRIPTION_LENGTH = 20
 MIN_TABLE_COLUMN_COUNT = 3
 MERMAID_ERD_KEY_TOKENS = {"PK", "FK", "UK"}
+GENERIC_FIELD_NAMES = {"id", "item", "items", "result", "results", "overview", "created_at", "updated_at", "deleted_at"}
+AUTH_SCOPE_KEYWORDS = {"auth", "login", "password", "session", "token", "role", "permission", "인증", "권한", "로그인"}
+PRIVACY_SCOPE_KEYWORDS = {"email", "phone", "address", "profile", "personal", "privacy", "pii", "개인", "이메일", "주소"}
+PAYMENT_SCOPE_KEYWORDS = {"payment", "billing", "invoice", "card", "subscription", "결제", "청구", "카드", "구독"}
+AUTH_SECURITY_KEYWORDS = {"auth", "authorization", "session", "token", "password", "role", "permission", "인증", "인가", "권한", "토큰"}
+PRIVACY_SECURITY_KEYWORDS = {"privacy", "personal", "pii", "encrypt", "mask", "retention", "개인정보", "암호화", "마스킹", "보관"}
+PAYMENT_SECURITY_KEYWORDS = {"payment", "billing", "card", "pci", "webhook", "signature", "결제", "카드", "웹훅", "서명"}
 
 
 def collect_blueprint_quality_errors(blueprint: BlueprintResponse) -> list[str]:
@@ -39,6 +47,7 @@ def collect_blueprint_quality_errors(blueprint: BlueprintResponse) -> list[str]:
     validate_database_depth(blueprint, errors)
     validate_database_erd(blueprint, errors)
     validate_sequence_diagram(blueprint, errors)
+    validate_cross_section_consistency(blueprint, errors)
 
     return errors
 
@@ -220,6 +229,94 @@ def validate_sequence_diagram(blueprint: BlueprintResponse, errors: list[str]) -
         errors.append("sequence_diagram must start with 'sequenceDiagram'")
 
 
+def validate_cross_section_consistency(blueprint: BlueprintResponse, errors: list[str]) -> None:
+    """API, DB, 다이어그램, 계획 섹션이 같은 제품 설계를 설명하는지 확인합니다."""
+    api_resources = collect_api_resource_tokens(blueprint)
+    table_tokens = collect_database_table_tokens(blueprint)
+    column_names = collect_database_column_names(blueprint)
+
+    validate_api_database_alignment(api_resources, table_tokens, errors)
+    validate_api_field_database_alignment(blueprint, column_names, errors)
+    validate_sequence_api_alignment(blueprint, api_resources, errors)
+    validate_plan_alignment(blueprint, api_resources, table_tokens, errors)
+    validate_contextual_security_coverage(blueprint, errors)
+
+
+def validate_api_database_alignment(
+    api_resources: set[str],
+    table_tokens: set[str],
+    errors: list[str],
+) -> None:
+    """API resource와 DB table 이름이 핵심 도메인 단어를 공유하는지 확인합니다."""
+    unmatched_resources = sorted(resource for resource in api_resources if resource not in table_tokens)
+
+    for resource in unmatched_resources:
+        errors.append(f"api resource must be represented in database_schema: {resource}")
+
+
+def validate_api_field_database_alignment(
+    blueprint: BlueprintResponse,
+    column_names: set[str],
+    errors: list[str],
+) -> None:
+    """API 입출력 필드가 DB 컬럼과 완전히 동떨어지지 않았는지 확인합니다."""
+    if not column_names:
+        return
+
+    for api in blueprint.api_spec:
+        field_names = {normalize_name_token(field.name) for field in [*api.request, *api.response]}
+        comparable_field_names = {field_name for field_name in field_names if field_name and field_name not in GENERIC_FIELD_NAMES}
+
+        if comparable_field_names and comparable_field_names.isdisjoint(column_names):
+            errors.append(f"api fields must overlap database columns: {api.method} {api.path}")
+
+
+def validate_sequence_api_alignment(
+    blueprint: BlueprintResponse,
+    api_resources: set[str],
+    errors: list[str],
+) -> None:
+    """시퀀스 다이어그램이 실제 API 흐름의 핵심 resource를 언급하는지 확인합니다."""
+    if not api_resources:
+        return
+
+    sequence_text = blueprint.sequence_diagram.lower()
+    if not any(resource in sequence_text for resource in api_resources):
+        errors.append("sequence_diagram must reference at least one api resource")
+
+
+def validate_plan_alignment(
+    blueprint: BlueprintResponse,
+    api_resources: set[str],
+    table_tokens: set[str],
+    errors: list[str],
+) -> None:
+    """구현 계획이 생성된 기능/API/DB 설계와 연결된 단어를 포함하는지 확인합니다."""
+    anchor_tokens = {token for token in api_resources | table_tokens if len(token) >= 4}
+    if not anchor_tokens:
+        return
+
+    plan_text = " ".join(f"{step.title} {step.description}" for step in blueprint.implementation_plan).lower()
+    if not any(token in plan_text for token in anchor_tokens):
+        errors.append("implementation_plan must reference generated feature, api, or database concepts")
+
+
+def validate_contextual_security_coverage(blueprint: BlueprintResponse, errors: list[str]) -> None:
+    """도메인에 인증/개인정보/결제 위험이 있으면 보안 고려사항에 해당 대응이 있는지 확인합니다."""
+    blueprint_text = collect_blueprint_text(blueprint)
+    security_text = " ".join(
+        f"{item.category} {item.title} {item.description}" for item in blueprint.security_considerations
+    ).lower()
+
+    for scope_name, scope_keywords, security_keywords in [
+        ("authentication", AUTH_SCOPE_KEYWORDS, AUTH_SECURITY_KEYWORDS),
+        ("privacy", PRIVACY_SCOPE_KEYWORDS, PRIVACY_SECURITY_KEYWORDS),
+        ("payment", PAYMENT_SCOPE_KEYWORDS, PAYMENT_SECURITY_KEYWORDS),
+    ]:
+        if contains_any_keyword(blueprint_text, scope_keywords) and not contains_any_keyword(security_text, security_keywords):
+            errors.append(f"security_considerations must cover {scope_name} risks")
+
+
 def normalize_constraint(constraint: str) -> str:
     """constraint 표기를 비교하기 쉽게 snake_case 소문자로 정규화합니다."""
     return constraint.strip().lower().replace(" ", "_")
@@ -230,3 +327,79 @@ def extract_primary_resource_name(path: str) -> str:
     parts = [part for part in path.strip("/").split("/") if part and not part.startswith("{")]
     resource_parts = [part for part in parts if part not in {"api", "v1", "v2", "v3"}]
     return resource_parts[0] if resource_parts else ""
+
+
+def collect_api_resource_tokens(blueprint: BlueprintResponse) -> set[str]:
+    """API path의 첫 resource를 비교 가능한 단수 토큰으로 모읍니다."""
+    return {
+        normalize_name_token(extract_primary_resource_name(api.path))
+        for api in blueprint.api_spec
+        if extract_primary_resource_name(api.path)
+    }
+
+
+def collect_database_table_tokens(blueprint: BlueprintResponse) -> set[str]:
+    """DB table 이름을 구성하는 도메인 토큰을 모읍니다."""
+    tokens: set[str] = set()
+
+    for table in blueprint.database_schema:
+        for token in table.name.split("_"):
+            normalized_token = normalize_name_token(token)
+            if normalized_token and normalized_token not in GENERIC_API_RESOURCES:
+                tokens.add(normalized_token)
+
+    return tokens
+
+
+def collect_database_column_names(blueprint: BlueprintResponse) -> set[str]:
+    """DB column 이름을 API field와 비교 가능한 토큰으로 모읍니다."""
+    return {
+        normalize_name_token(column.name)
+        for table in blueprint.database_schema
+        for column in table.columns
+        if normalize_name_token(column.name)
+    }
+
+
+def normalize_name_token(value: str) -> str:
+    """복수형과 path parameter 표기를 느슨하게 맞추기 위해 이름 토큰을 정규화합니다."""
+    normalized = value.strip("{}").strip().lower().replace("-", "_")
+    if normalized.endswith("_id"):
+        normalized = normalized[:-3]
+    if normalized.endswith("ies") and len(normalized) > 4:
+        return f"{normalized[:-3]}y"
+    if normalized.endswith("s") and not normalized.endswith("ss") and len(normalized) > 3:
+        return normalized[:-1]
+    return normalized
+
+
+def collect_blueprint_text(blueprint: BlueprintResponse) -> str:
+    """보안 맥락 탐지를 위해 설계도 전체 텍스트를 하나로 합칩니다."""
+    values = [
+        blueprint.overview,
+        blueprint.tech_stack.rationale,
+        blueprint.database_erd,
+        blueprint.sequence_diagram,
+    ]
+
+    values.extend(f"{feature.name} {feature.description}" for feature in blueprint.features)
+    values.extend(f"{api.method} {api.path} {api.description}" for api in blueprint.api_spec)
+    values.extend(
+        f"{field.name} {field.type} {field.description}"
+        for api in blueprint.api_spec
+        for field in [*api.request, *api.response]
+    )
+    values.extend(f"{table.name} {table.description}" for table in blueprint.database_schema)
+    values.extend(
+        f"{column.name} {column.type} {column.description}"
+        for table in blueprint.database_schema
+        for column in table.columns
+    )
+
+    return " ".join(values).lower()
+
+
+def contains_any_keyword(text: str, keywords: set[str]) -> bool:
+    """영문 토큰과 한국어 부분 문자열을 함께 비교합니다."""
+    english_tokens = set(TOKEN_PATTERN.findall(text))
+    return any(keyword in text if not keyword.isascii() else keyword in english_tokens for keyword in keywords)
