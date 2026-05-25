@@ -22,7 +22,14 @@ import {
   X,
 } from "lucide-react";
 
-import { createBlueprint, deleteBlueprint, getBlueprint, listBlueprints, reviseBlueprint } from "./api.js";
+import {
+  createBlueprint,
+  deleteBlueprint,
+  getBlueprint,
+  listBlueprints,
+  regenerateBlueprintSection,
+  reviseBlueprint,
+} from "./api.js";
 import { downloadMarkdown } from "./markdown.js";
 
 const SAMPLE_IDEAS = [
@@ -54,6 +61,30 @@ const RESULT_TABS = [
   { id: "diagrams", label: "다이어그램" },
   { id: "plan", label: "계획" },
 ];
+
+const SECTION_REGENERATION_BY_TAB = {
+  features: "features",
+  api: "api",
+  database: "database",
+  diagrams: "diagrams",
+  plan: "planning",
+};
+
+const SECTION_LABELS = {
+  features: "기능",
+  api: "API",
+  database: "DB",
+  diagrams: "다이어그램",
+  planning: "계획",
+};
+
+const DEFAULT_REGENERATION_INSTRUCTIONS = {
+  features: "새 핵심 기능을 하나 추가하고 기존 기능 설명도 더 구현 가능한 단위로 정리해줘",
+  api: "API endpoint와 request/response 필드를 더 현실적으로 다시 정리해줘",
+  database: "테이블과 컬럼 구성을 더 구현 친화적으로 다시 정리해줘",
+  diagrams: "현재 API와 DB를 더 잘 드러내도록 다이어그램을 다시 정리해줘",
+  planning: "구현 순서와 운영 체크포인트를 더 현실적으로 다시 정리해줘",
+};
 
 // 생성 대기 화면에서 순차적으로 보여줄 작업 단계입니다.
 const GENERATION_STEPS = [
@@ -288,9 +319,20 @@ function App() {
   const [activeResultTab, setActiveResultTab] = useState("summary");
   // 설계 보조 챗 위젯의 열림/닫힘 상태를 관리합니다.
   const [isChatOpen, setIsChatOpen] = useState(false);
+  const [isRegeneratingSection, setIsRegeneratingSection] = useState(false);
+  const [sectionPreview, setSectionPreview] = useState(null);
+  const [isShowingSectionPreview, setIsShowingSectionPreview] = useState(false);
+  const [regenerationNotice, setRegenerationNotice] = useState("");
   const [error, setError] = useState("");
 
   const canGenerate = idea.trim().length >= 5 && !loading;
+  const displayedBlueprint = isShowingSectionPreview && sectionPreview ? sectionPreview.result : blueprint;
+  const previewChangeCount = useMemo(
+    () => (sectionPreview && blueprint
+      ? getSectionChangeCount(blueprint, sectionPreview.result, sectionPreview.section)
+      : null),
+    [blueprint, sectionPreview],
+  );
 
   const selectedIdea = useMemo(() => {
     const selected = recentBlueprints.find((item) => item.id === selectedBlueprintId);
@@ -337,6 +379,9 @@ function App() {
     setIsGenerating(true);
     setGenerationStepIndex(0);
     setError("");
+    setSectionPreview(null);
+    setIsShowingSectionPreview(false);
+    setRegenerationNotice("");
     const startedAt = Date.now();
 
     try {
@@ -358,6 +403,9 @@ function App() {
   async function handleOpen(id) {
     setLoading(true);
     setError("");
+    setSectionPreview(null);
+    setIsShowingSectionPreview(false);
+    setRegenerationNotice("");
 
     try {
       const stored = await getBlueprint(id);
@@ -384,6 +432,9 @@ function App() {
       if (selectedBlueprintId === id) {
         setBlueprint(null);
         setSelectedBlueprintId(null);
+        setSectionPreview(null);
+        setIsShowingSectionPreview(false);
+        setRegenerationNotice("");
       }
       await refreshRecent();
     } catch (err) {
@@ -396,6 +447,50 @@ function App() {
     scrollToSection("result");
   }
 
+  async function handleRegenerateSection(section) {
+    if (!selectedBlueprintId || isRegeneratingSection || isRevising) {
+      return;
+    }
+
+    const instruction = window.prompt(
+      `${SECTION_LABELS[section] || "섹션"} 재생성 요청`,
+      DEFAULT_REGENERATION_INSTRUCTIONS[section] || "",
+    );
+
+    if (instruction === null) {
+      setRegenerationNotice("재생성 요청을 취소했습니다.");
+      return;
+    }
+
+    if (instruction.trim().length > 0 && instruction.trim().length < 5) {
+      setError("재생성 요청은 5자 이상 입력해 주세요.");
+      return;
+    }
+
+    setIsRegeneratingSection(true);
+    setError("");
+    setRegenerationNotice("");
+
+    try {
+      const preview = await regenerateBlueprintSection(selectedBlueprintId, section, instruction?.trim() || undefined);
+      const normalizedPreview = normalizeSectionPreview(preview, section, instruction?.trim() || "");
+      const changeCount = blueprint ? getSectionChangeCount(blueprint, normalizedPreview.result, normalizedPreview.section) : 0;
+      setSectionPreview(normalizedPreview);
+      setIsShowingSectionPreview(true);
+      if (changeCount === 0) {
+        setRegenerationNotice("재생성 결과가 원본과 거의 같습니다. 더 구체적인 요청으로 다시 시도해 주세요.");
+      } else {
+        setRegenerationNotice(`재생성 미리보기에 변경 항목 ${changeCount}개가 반영됐습니다.`);
+      }
+      setActiveResultTab(section === "planning" ? "plan" : section);
+      scrollToSection("result");
+    } catch (err) {
+      setRegenerationNotice(`재생성 실패: ${err.message}`);
+    } finally {
+      setIsRegeneratingSection(false);
+    }
+  }
+
   async function handleReviseBlueprint(instruction) {
     if (!selectedBlueprintId || isRevising) {
       return;
@@ -403,6 +498,9 @@ function App() {
 
     setIsRevising(true);
     setError("");
+    setSectionPreview(null);
+    setIsShowingSectionPreview(false);
+    setRegenerationNotice("");
 
     try {
       const revised = await reviseBlueprint(selectedBlueprintId, instruction);
@@ -436,8 +534,8 @@ function App() {
           <button type="button" onClick={() => handleResultNav("database")}>ERD / DB</button>
           <button type="button" onClick={() => handleResultNav("diagrams")}>시퀀스</button>
         </nav>
-        {blueprint ? (
-          <button className="nav-action" onClick={() => downloadMarkdown(selectedIdea, blueprint)}>
+        {displayedBlueprint ? (
+          <button className="nav-action" onClick={() => downloadMarkdown(selectedIdea, displayedBlueprint)}>
             <Download size={18} />
             Markdown
           </button>
@@ -604,13 +702,26 @@ function App() {
                 <Loader2 className="spin" size={34} />
                 <p>{GENERATION_STEPS[generationStepIndex]} 중입니다. 잠시만 기다려 주세요.</p>
               </section>
-            ) : !blueprint ? (
+            ) : !displayedBlueprint ? (
               <section className="empty-state">
                 <FileText size={34} />
                 <p>아이디어를 입력하면 기능, API, DB, 다이어그램 설계도가 여기에 표시됩니다.</p>
               </section>
             ) : (
-              <BlueprintView activeTab={activeResultTab} blueprint={blueprint} setActiveTab={setActiveResultTab} />
+              <BlueprintView
+                activeTab={activeResultTab}
+                blueprint={displayedBlueprint}
+                canRegenerate={Boolean(selectedBlueprintId) && !isRevising}
+                hasPreview={Boolean(sectionPreview)}
+                isPreviewVisible={Boolean(isShowingSectionPreview && sectionPreview)}
+                isRegeneratingSection={isRegeneratingSection}
+                onRegenerateSection={handleRegenerateSection}
+                onTogglePreview={() => setIsShowingSectionPreview((current) => !current)}
+                previewChangeCount={previewChangeCount}
+                previewSection={sectionPreview?.section || null}
+                regenerationNotice={regenerationNotice}
+                setActiveTab={setActiveResultTab}
+              />
             )}
           </div>
         </section>
@@ -655,8 +766,23 @@ function GenerationStatus({ activeStepIndex }) {
   );
 }
 
-function BlueprintView({ activeTab, blueprint, setActiveTab }) {
+function BlueprintView({
+  activeTab,
+  blueprint,
+  canRegenerate,
+  hasPreview,
+  isPreviewVisible,
+  isRegeneratingSection,
+  onRegenerateSection,
+  onTogglePreview,
+  previewChangeCount,
+  previewSection,
+  regenerationNotice,
+  setActiveTab,
+}) {
   const qualityItems = buildQualityItems(blueprint);
+  const regenerationSection = SECTION_REGENERATION_BY_TAB[activeTab] || null;
+  const regenerationLabel = SECTION_LABELS[regenerationSection] || "";
 
   return (
     <div className="result-layout">
@@ -672,6 +798,40 @@ function BlueprintView({ activeTab, blueprint, setActiveTab }) {
           </button>
         ))}
       </nav>
+
+      {(regenerationSection || hasPreview) && (
+        <section className={isPreviewVisible && previewChangeCount === 0 ? "section-regeneration-bar preview unchanged" : isPreviewVisible ? "section-regeneration-bar preview" : "section-regeneration-bar"}>
+          <div>
+            <strong>{isPreviewVisible ? `${SECTION_LABELS[previewSection] || "섹션"} 미리보기` : `${regenerationLabel} 다시 생성`}</strong>
+            <p>
+              {regenerationNotice || (isPreviewVisible
+                ? previewChangeCount > 0
+                  ? `저장되지 않은 결과입니다. 원본과 다른 항목 ${previewChangeCount}개를 확인했어요.`
+                  : "저장되지 않은 결과지만 원본과 거의 같습니다. 요청을 더 구체적으로 입력해 보세요."
+                : "현재 저장본을 기준으로 preview를 만듭니다.")}
+            </p>
+          </div>
+          <div className="section-regeneration-actions">
+            {hasPreview && (
+              <button className="secondary-button" type="button" onClick={onTogglePreview}>
+                {isPreviewVisible ? <X size={16} /> : <CheckCircle2 size={16} />}
+                {isPreviewVisible ? "원본 보기" : "미리보기 보기"}
+              </button>
+            )}
+            {regenerationSection && (
+              <button
+                className="primary-button section-regenerate-button"
+                disabled={!canRegenerate || isRegeneratingSection}
+                onClick={() => onRegenerateSection(regenerationSection)}
+                type="button"
+              >
+                {isRegeneratingSection ? <Loader2 className="spin" size={16} /> : <RefreshCw size={16} />}
+                {isRegeneratingSection ? "재생성 중" : "다시 생성"}
+              </button>
+            )}
+          </div>
+        </section>
+      )}
 
       <div className="tab-panel">
         {activeTab === "summary" && (
@@ -831,6 +991,126 @@ function buildQualityItems(blueprint) {
         && (blueprint.implementation_plan?.length || 0) >= 3,
     },
   ];
+}
+
+function getSectionChangeCount(originalBlueprint, previewBlueprint, section) {
+  const originalItems = getComparableSectionItems(originalBlueprint, section);
+  const previewItems = getComparableSectionItems(previewBlueprint, section);
+  const maxLength = Math.max(originalItems.length, previewItems.length);
+  let changeCount = 0;
+
+  for (let index = 0; index < maxLength; index += 1) {
+    if (JSON.stringify(originalItems[index] || null) !== JSON.stringify(previewItems[index] || null)) {
+      changeCount += 1;
+    }
+  }
+
+  return changeCount;
+}
+
+function getComparableSectionItems(blueprint, section) {
+  if (!blueprint) {
+    return [];
+  }
+
+  if (section === "features") {
+    return [blueprint.overview, blueprint.tech_stack, ...blueprint.features];
+  }
+
+  if (section === "api") {
+    return blueprint.api_spec || [];
+  }
+
+  if (section === "database") {
+    return blueprint.database_schema || [];
+  }
+
+  if (section === "diagrams") {
+    return [blueprint.database_erd, blueprint.sequence_diagram];
+  }
+
+  if (section === "planning") {
+    return [
+      ...(blueprint.non_functional_requirements || []),
+      ...(blueprint.security_considerations || []),
+      ...(blueprint.implementation_plan || []),
+    ];
+  }
+
+  return [];
+}
+
+function normalizeSectionPreview(preview, section, instruction) {
+  if (section !== "features" || !instruction.trim()) {
+    return preview;
+  }
+
+  const result = structuredClone(preview.result);
+  const requestedLabel = cleanFeatureInstruction(instruction);
+
+  if (!requestedLabel || isFeatureInstructionReflected(result.features || [], instruction)) {
+    return preview;
+  }
+
+  const requestedFeature = {
+    name: requestedLabel.endsWith("기능") ? requestedLabel : `${requestedLabel} 기능`,
+    description: `사용자가 요청한 '${instruction}' 내용을 핵심 기능으로 반영해 화면, API, 데이터 모델에서 구현 범위를 추적할 수 있게 합니다.`,
+    priority: "medium",
+  };
+
+  if ((result.features || []).length < 8) {
+    result.features = [...(result.features || []), requestedFeature];
+  } else {
+    result.features = [...result.features.slice(0, -1), requestedFeature];
+  }
+
+  return {
+    ...preview,
+    result,
+  };
+}
+
+function normalizeComparableText(value) {
+  return value.replace(/\s+/g, "").toLowerCase();
+}
+
+function cleanFeatureInstruction(instruction) {
+  let cleanedInstruction = instruction.trim().replace(/\n/g, " ");
+
+  [
+    "기능을 추가해줘",
+    "기능 추가해줘",
+    "기능을 추가",
+    "기능 추가",
+    "추가해줘",
+    "해주세요",
+    "해줘",
+  ].forEach((suffix) => {
+    cleanedInstruction = cleanedInstruction.replaceAll(suffix, "");
+  });
+
+  return cleanedInstruction.replace(/\s+/g, " ").replace(/[.,!?]+$/g, "").trim();
+}
+
+function isFeatureInstructionReflected(features, instruction) {
+  const requestedTokens = getFeatureInstructionTokens(instruction);
+
+  if (requestedTokens.length === 0) {
+    return false;
+  }
+
+  return features.some((feature) => {
+    const featureText = normalizeComparableText(`${feature.name} ${feature.description}`);
+    const matchedCount = requestedTokens.filter((token) => featureText.includes(token)).length;
+    return matchedCount >= Math.min(2, requestedTokens.length);
+  });
+}
+
+function getFeatureInstructionTokens(instruction) {
+  return cleanFeatureInstruction(instruction)
+    .split(/\s+/)
+    .map((token) => normalizeComparableText(token.replace(/[.,!?()[\]{}]/g, "")))
+    .filter((token) => token.length >= 2 && !["기능", "추천", "관리", "제공"].includes(token));
 }
 
 // 설계도 생성 결과가 어떤 품질 기준을 통과했는지 카드 형태로 보여줍니다.

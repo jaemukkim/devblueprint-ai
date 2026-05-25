@@ -866,6 +866,62 @@ textarea:focus {
   color: #ffffff;
 }
 
+.section-regeneration-bar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  border: 1px solid #cfe0ff;
+  border-radius: 10px;
+  background: #f8fbff;
+  box-shadow: 0 16px 35px rgba(15, 23, 42, 0.05);
+  color: var(--text);
+  padding: 12px 14px;
+}
+
+.section-regeneration-bar.preview {
+  border-color: #bbf7d0;
+  background: #f5fff9;
+}
+
+.section-regeneration-bar.unchanged {
+  border-color: #fde68a;
+  background: #fffbeb;
+}
+
+.section-regeneration-bar strong {
+  display: block;
+  color: #17202a;
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.section-regeneration-bar p {
+  margin: 3px 0 0;
+  color: #607084;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.section-regeneration-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.section-regeneration-actions .primary-button,
+.section-regeneration-actions .secondary-button {
+  margin-top: 0;
+  min-height: 36px;
+}
+
+.section-regenerate-button {
+  min-width: 112px;
+  justify-content: center;
+}
+
 .tab-panel,
 .summary-tab,
 .diagram-grid,
@@ -1986,6 +2042,20 @@ th {
 
   .result-tabs button {
     flex: 1 1 90px;
+  }
+
+  .section-regeneration-bar {
+    grid-template-columns: 1fr;
+  }
+
+  .section-regeneration-actions {
+    justify-content: stretch;
+  }
+
+  .section-regeneration-actions .primary-button,
+  .section-regeneration-actions .secondary-button {
+    flex: 1 1 140px;
+    justify-content: center;
   }
 
   .stack-grid-wide {

@@ -52,6 +52,35 @@ def collect_blueprint_quality_errors(blueprint: BlueprintResponse) -> list[str]:
     return errors
 
 
+def collect_blueprint_section_quality_errors(blueprint: BlueprintResponse, section: str) -> list[str]:
+    """부분 재생성 preview에서는 선택한 섹션 자체의 품질만 검증합니다."""
+    errors: list[str] = []
+
+    if section == "features":
+        validate_collection_size("features", blueprint.features, 5, 8, errors)
+        validate_feature_quality(blueprint, errors)
+    elif section == "api":
+        validate_collection_size("api_spec", blueprint.api_spec, 4, 8, errors)
+        validate_api_paths(blueprint, errors)
+        validate_api_fields(blueprint, errors)
+    elif section == "database":
+        validate_collection_size("database_schema", blueprint.database_schema, 3, 6, errors)
+        validate_database_names(blueprint, errors)
+        validate_database_primary_keys(blueprint, errors)
+        validate_database_depth(blueprint, errors)
+    elif section == "diagrams":
+        validate_database_erd(blueprint, errors)
+        validate_sequence_diagram(blueprint, errors)
+    elif section == "planning":
+        validate_collection_size("non_functional_requirements", blueprint.non_functional_requirements, 3, 6, errors)
+        validate_collection_size("security_considerations", blueprint.security_considerations, 3, 6, errors)
+        validate_collection_size("implementation_plan", blueprint.implementation_plan, 3, 6, errors)
+        validate_design_considerations(blueprint, errors)
+        validate_implementation_plan(blueprint, errors)
+
+    return errors
+
+
 def validate_blueprint_quality(blueprint: BlueprintResponse) -> None:
     """설계 품질 규칙을 검증하고 실패하면 생성 오류로 변환합니다."""
     errors = collect_blueprint_quality_errors(blueprint)

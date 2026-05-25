@@ -199,6 +199,7 @@ def build_section_regeneration_prompt(
 ) -> str:
     """기존 설계도 맥락을 유지하면서 특정 섹션만 다시 생성하도록 지시합니다."""
     extra_instruction = instruction.strip() if instruction else "Improve this section while preserving the current product scope."
+    section_instruction = build_section_regeneration_guidance(section)
 
     return f"""
 Regenerate only the requested section of the existing system blueprint.
@@ -216,10 +217,29 @@ Current blueprint JSON:
 {current_blueprint.model_dump_json(indent=2)}
 
 Return only the structured output for the requested section.
+{section_instruction}
 Keep the regenerated section consistent with the current features, API endpoints, database tables, diagrams, security considerations, and implementation plan.
 Do not redesign unrelated sections.
 Write user-facing descriptions in Korean and keep technical identifiers in English.
 """
+
+
+def build_section_regeneration_guidance(section: str) -> str:
+    """섹션별 재생성 의도를 모델이 더 명확히 따르도록 추가 지시를 만듭니다."""
+    if section == "features":
+        return (
+            "For features, return the full FeatureDesign with overview, tech_stack, and 5 to 8 features. "
+            "If the instruction asks to add a feature, include a new concrete feature instead of only rewording existing ones."
+        )
+    if section == "api":
+        return "For API, return the full ApiDesign and make at least one endpoint or field meaningfully more implementation-ready."
+    if section == "database":
+        return "For database, return the full DatabaseDesign and make at least one table or column meaningfully more implementation-ready."
+    if section == "diagrams":
+        return "For diagrams, return both database_erd and sequence_diagram, matching the current API and database schema."
+    if section == "planning":
+        return "For planning, return all planning lists and make the implementation steps concrete enough to execute."
+    return ""
 
 
 def build_blueprint_revision_prompt(

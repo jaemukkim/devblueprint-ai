@@ -18,7 +18,11 @@ from app.schemas.blueprint import (
     TechStack,
 )
 from app.schemas.blueprint import BlueprintRequest
-from app.services.blueprint_generator import generate_blueprint_pipeline_with_retry, generate_blueprint_with_retry
+from app.services.blueprint_generator import (
+    generate_blueprint_pipeline_with_retry,
+    generate_blueprint_with_retry,
+    regenerate_blueprint_section_with_retry,
+)
 from app.services.llm_client import BlueprintGenerationError
 
 
@@ -226,3 +230,98 @@ def test_generate_blueprint_pipeline_assembles_section_outputs(monkeypatch) -> N
         DiagramDesign,
         PlanningDesign,
     ]
+
+
+def test_regenerate_feature_section_adds_requested_feature_when_llm_omits_it(monkeypatch) -> None:
+    current_blueprint = make_blueprint()
+    unchanged_feature_design = FeatureDesign(
+        overview=current_blueprint.overview,
+        features=current_blueprint.features,
+        tech_stack=current_blueprint.tech_stack,
+    )
+    feedback_calls = []
+
+    def fake_request_structured_output(user_prompt, text_format, validation_feedback=None):
+        feedback_calls.append(validation_feedback)
+        return unchanged_feature_design
+
+    monkeypatch.setattr(
+        "app.services.blueprint_generator.request_structured_output_from_openai",
+        fake_request_structured_output,
+    )
+
+    result = regenerate_blueprint_section_with_retry(
+        "독서 기록 서비스",
+        current_blueprint,
+        "features",
+        "독서 모임 공유 기능을 추가해줘",
+    )
+
+    assert len(result.features) == len(current_blueprint.features) + 1
+    assert feedback_calls[0] is None
+    assert result.features[-1].name == "독서 모임 공유 기능"
+    assert "독서 모임 공유 기능을 추가해줘" in result.features[-1].description
+
+
+def test_regenerate_feature_section_ignores_unrelated_api_validation_errors(monkeypatch) -> None:
+    current_blueprint = make_blueprint()
+    current_blueprint.api_spec[0].request[0].name = "unmatched_field"
+    current_blueprint.implementation_plan[0].description = "공통 개발 환경을 순서대로 구성하는 충분한 구현 단계 설명입니다."
+    feature_design = FeatureDesign(
+        overview=current_blueprint.overview,
+        features=current_blueprint.features,
+        tech_stack=current_blueprint.tech_stack,
+    )
+
+    def fake_request_structured_output(user_prompt, text_format, validation_feedback=None):
+        return feature_design
+
+    monkeypatch.setattr(
+        "app.services.blueprint_generator.request_structured_output_from_openai",
+        fake_request_structured_output,
+    )
+
+    result = regenerate_blueprint_section_with_retry(
+        "독서 기록 서비스",
+        current_blueprint,
+        "features",
+        "요리 유튜브 채널 기능",
+    )
+
+    assert result.features[-1].name == "요리 유튜브 채널 기능"
+
+
+def test_regenerate_feature_section_does_not_duplicate_similar_feature(monkeypatch) -> None:
+    current_blueprint = make_blueprint()
+    changed_blueprint = current_blueprint.model_copy(deep=True)
+    changed_blueprint.features.append(
+        Feature(
+            name="요리 유튜브 채널 추천",
+            description="추천된 요리에 연관된 인기 요리 유튜브 채널을 제공해 영상으로 조리법을 배울 수 있게 합니다.",
+            priority="medium",
+        )
+    )
+    feature_design = FeatureDesign(
+        overview=changed_blueprint.overview,
+        features=changed_blueprint.features,
+        tech_stack=changed_blueprint.tech_stack,
+    )
+
+    def fake_request_structured_output(user_prompt, text_format, validation_feedback=None):
+        return feature_design
+
+    monkeypatch.setattr(
+        "app.services.blueprint_generator.request_structured_output_from_openai",
+        fake_request_structured_output,
+    )
+
+    result = regenerate_blueprint_section_with_retry(
+        "독서 기록 서비스",
+        current_blueprint,
+        "features",
+        "요리유튜브 채널 추천 기능",
+    )
+
+    matching_features = [feature for feature in result.features if "요리" in feature.name and "유튜브" in feature.name]
+    assert len(matching_features) == 1
+    assert matching_features[0].name == "요리 유튜브 채널 추천"

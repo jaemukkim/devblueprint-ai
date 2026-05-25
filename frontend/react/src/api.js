@@ -47,6 +47,13 @@ export function reviseBlueprint(id, instruction) {
   });
 }
 
+export function regenerateBlueprintSection(id, section, instruction) {
+  return requestJson(`/api/v1/blueprints/${id}/sections/${section}/regenerate`, {
+    method: "POST",
+    body: JSON.stringify(instruction ? { instruction } : {}),
+  });
+}
+
 export function deleteBlueprint(id) {
   return requestJson(`/api/v1/blueprints/${id}`, {
     method: "DELETE",

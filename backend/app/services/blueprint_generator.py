@@ -18,7 +18,11 @@ from app.schemas.blueprint import (
     PlanningDesign,
     TechStack,
 )
-from app.services.blueprint_validator import collect_blueprint_quality_errors, validate_blueprint_quality
+from app.services.blueprint_validator import (
+    collect_blueprint_quality_errors,
+    collect_blueprint_section_quality_errors,
+    validate_blueprint_quality,
+)
 from app.services.llm_client import (
     BlueprintGenerationError,
     request_blueprint_from_openai,
@@ -128,7 +132,10 @@ def regenerate_blueprint_section(
             instruction,
         )
 
-    validate_blueprint_quality(blueprint)
+    section_errors = collect_blueprint_section_quality_errors(blueprint, normalized_section)
+    if section_errors:
+        joined_errors = "; ".join(section_errors)
+        raise BlueprintGenerationError(f"섹션 재생성 품질 검증에 실패했습니다: {joined_errors}")
     return blueprint
 
 
@@ -144,7 +151,10 @@ def regenerate_blueprint_section_with_retry(
 
     for _ in range(MAX_OPENAI_GENERATION_ATTEMPTS):
         blueprint = regenerate_blueprint_section_once(idea, current_blueprint, section, instruction, validation_feedback)
-        errors = collect_blueprint_quality_errors(blueprint)
+        errors = [
+            *collect_blueprint_section_quality_errors(blueprint, section),
+            *collect_section_regeneration_errors(current_blueprint, blueprint, section, instruction),
+        ]
 
         if not errors:
             return blueprint
@@ -172,6 +182,7 @@ def regenerate_blueprint_section_once(
         blueprint.overview = feature_design.overview
         blueprint.features = feature_design.features
         blueprint.tech_stack = feature_design.tech_stack
+        ensure_feature_instruction_is_visible(blueprint, instruction)
     elif section == "api":
         api_design = request_structured_output_from_openai(prompt, ApiDesign, validation_feedback)
         blueprint.api_spec = api_design.api_spec
@@ -189,6 +200,131 @@ def regenerate_blueprint_section_once(
         blueprint.implementation_plan = planning_design.implementation_plan
 
     return blueprint
+
+
+def collect_section_regeneration_errors(
+    current_blueprint: BlueprintResponse,
+    regenerated_blueprint: BlueprintResponse,
+    section: str,
+    instruction: str | None = None,
+) -> list[str]:
+    """부분 재생성 결과가 선택 섹션을 실제로 바꿨는지 확인합니다."""
+    errors: list[str] = []
+
+    if get_section_fingerprint(current_blueprint, section) == get_section_fingerprint(regenerated_blueprint, section):
+        errors.append(f"{section} section must change during regeneration")
+
+    if section == "features" and instruction_mentions_addition(instruction):
+        current_count = len(current_blueprint.features)
+        regenerated_count = len(regenerated_blueprint.features)
+        if current_count < 8 and regenerated_count <= current_count:
+            errors.append("features regeneration must add a new feature when the instruction asks for one")
+
+    return errors
+
+
+def ensure_feature_instruction_is_visible(blueprint: BlueprintResponse, instruction: str | None) -> None:
+    """기능 재생성 요청이 결과 목록에서 바로 보이도록 요청 기반 기능 항목을 보강합니다."""
+    if not instruction:
+        return
+
+    if is_feature_instruction_reflected(blueprint.features, instruction):
+        return
+
+    requested_feature = Feature(
+        name=build_requested_feature_name(instruction),
+        description=f"사용자가 요청한 '{instruction.strip()}' 내용을 핵심 기능으로 반영해 화면, API, 데이터 모델에서 구현 범위를 추적할 수 있게 합니다.",
+        priority="medium",
+    )
+
+    if len(blueprint.features) < 8:
+        blueprint.features.append(requested_feature)
+    elif blueprint.features:
+        blueprint.features[-1] = requested_feature
+
+
+def build_requested_feature_name(instruction: str) -> str:
+    """사용자 입력을 기능 제목으로 읽기 좋게 다듬습니다."""
+    cleaned_instruction = clean_feature_instruction(instruction)
+    if not cleaned_instruction:
+        return "요청 반영 기능"
+
+    characters = list(cleaned_instruction)
+    title = "".join(characters[:18])
+    return title if title.endswith("기능") else f"{title} 기능"
+
+
+def clean_feature_instruction(instruction: str) -> str:
+    """기능 제목/비교에 쓰기 위해 요청 문장에서 명령형 표현을 제거합니다."""
+    cleaned_instruction = instruction.strip().replace("\n", " ")
+    for suffix in ["기능을 추가해줘", "기능 추가해줘", "기능을 추가", "기능 추가", "추가해줘", "해주세요", "해줘"]:
+        cleaned_instruction = cleaned_instruction.replace(suffix, "")
+
+    return " ".join(cleaned_instruction.split()).strip(".,!? ")
+
+
+def is_feature_instruction_reflected(features: list[Feature], instruction: str) -> bool:
+    """요청 핵심 단어가 기존 기능에 충분히 들어 있으면 이미 반영된 것으로 봅니다."""
+    requested_tokens = extract_feature_instruction_tokens(instruction)
+    if not requested_tokens:
+        return False
+
+    for feature in features:
+        feature_text = normalize_revision_text(f"{feature.name} {feature.description}")
+        matched_count = sum(1 for token in requested_tokens if token in feature_text)
+        if matched_count >= min(2, len(requested_tokens)):
+            return True
+
+    return False
+
+
+def extract_feature_instruction_tokens(instruction: str) -> list[str]:
+    """기능 중복 판단에 쓸 핵심 단어만 추립니다."""
+    cleaned_instruction = clean_feature_instruction(instruction)
+    raw_tokens = [token.strip(".,!?()[]{}") for token in cleaned_instruction.split()]
+    return [
+        normalize_revision_text(token)
+        for token in raw_tokens
+        if len(normalize_revision_text(token)) >= 2 and normalize_revision_text(token) not in {"기능", "추천", "관리", "제공"}
+    ]
+
+
+def get_section_fingerprint(blueprint: BlueprintResponse, section: str) -> str:
+    """섹션 변경 여부를 비교하기 위해 선택 섹션만 안정적인 JSON 문자열로 변환합니다."""
+    if section == "features":
+        value = {
+            "overview": blueprint.overview,
+            "features": [feature.model_dump() for feature in blueprint.features],
+            "tech_stack": blueprint.tech_stack.model_dump(),
+        }
+    elif section == "api":
+        value = [api.model_dump() for api in blueprint.api_spec]
+    elif section == "database":
+        value = [table.model_dump() for table in blueprint.database_schema]
+    elif section == "diagrams":
+        value = {
+            "database_erd": blueprint.database_erd,
+            "sequence_diagram": blueprint.sequence_diagram,
+        }
+    elif section == "planning":
+        value = {
+            "non_functional_requirements": [item.model_dump() for item in blueprint.non_functional_requirements],
+            "security_considerations": [item.model_dump() for item in blueprint.security_considerations],
+            "implementation_plan": [step.model_dump() for step in blueprint.implementation_plan],
+        }
+    else:
+        value = {}
+
+    return str(value)
+
+
+def instruction_mentions_addition(instruction: str | None) -> bool:
+    """사용자 요청이 추가 의도인지 느슨하게 판별합니다."""
+    if not instruction:
+        return False
+
+    normalized = instruction.lower()
+    return any(keyword in normalized for keyword in ["추가", "add", "new", "include"])
 
 
 def generate_blueprint_with_retry(user_prompt: str) -> BlueprintResponse:
@@ -378,7 +514,23 @@ def build_placeholder_section_regeneration(
     suffix = f" 추가 지시사항 '{instruction.strip()}'을 반영했습니다." if instruction else " 섹션 재생성 preview를 반영했습니다."
 
     if section == "features" and blueprint.features:
-        blueprint.features[0].description = f"{blueprint.features[0].description}{suffix}"
+        added_feature = Feature(
+            name="추가된 기능 개선안",
+            description=(
+                "선택한 기능 섹션을 다시 검토해 사용자 행동, 백엔드 책임, 구현 범위를 더 선명하게 정리합니다."
+                f"{suffix}"
+            ),
+            priority="medium",
+        )
+        if len(blueprint.features) < 8:
+            blueprint.features.append(added_feature)
+        else:
+            blueprint.features[-1] = added_feature
+        blueprint.features[0].name = "재생성된 핵심 기능 정리"
+        blueprint.features[0].description = (
+            "기존 핵심 기능도 다시 검토해 사용자 행동과 구현 범위를 더 명확하게 정리합니다."
+            f"{suffix}"
+        )
     elif section == "api" and blueprint.api_spec:
         blueprint.api_spec[0].description = f"{blueprint.api_spec[0].description}{suffix}"
     elif section == "database" and blueprint.database_schema:
