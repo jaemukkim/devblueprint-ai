@@ -206,6 +206,67 @@ def test_revise_blueprint_returns_404_when_missing() -> None:
     assert response.status_code == 404
 
 
+def test_regenerate_blueprint_section_returns_preview_without_saving(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "use_openai", False)
+    blueprint_repository.clear()
+
+    create_response = client.post(
+        "/api/v1/blueprint/generate",
+        json={"idea": "독서 기록을 분석하는 AI 서비스"},
+    )
+    blueprint_id = client.get("/api/v1/blueprints").json()["items"][0]["id"]
+    regenerate_response = client.post(
+        f"/api/v1/blueprints/{blueprint_id}/sections/planning/regenerate",
+        json={"instruction": "일정을 더 현실적으로 조정해줘"},
+    )
+
+    assert create_response.status_code == 200
+    assert regenerate_response.status_code == 200
+
+    data = regenerate_response.json()
+    assert data["section"] == "planning"
+    assert "일정을 더 현실적으로 조정해줘" in data["result"]["implementation_plan"][0]["description"]
+    assert data["result"]["features"] == create_response.json()["features"]
+    assert blueprint_repository.count() == 1
+
+
+def test_regenerate_blueprint_section_accepts_alias(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "use_openai", False)
+    blueprint_repository.clear()
+
+    client.post(
+        "/api/v1/blueprint/generate",
+        json={"idea": "운동 루틴을 추천하는 AI 코치 서비스"},
+    )
+    blueprint_id = client.get("/api/v1/blueprints").json()["items"][0]["id"]
+    response = client.post(f"/api/v1/blueprints/{blueprint_id}/sections/api_spec/regenerate")
+
+    assert response.status_code == 200
+    assert response.json()["section"] == "api"
+
+
+def test_regenerate_blueprint_section_returns_404_when_missing() -> None:
+    blueprint_repository.clear()
+
+    response = client.post("/api/v1/blueprints/missing-blueprint-id/sections/planning/regenerate")
+
+    assert response.status_code == 404
+
+
+def test_regenerate_blueprint_section_rejects_unknown_section(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "use_openai", False)
+    blueprint_repository.clear()
+
+    client.post(
+        "/api/v1/blueprint/generate",
+        json={"idea": "카페 공유 커뮤니티 서비스"},
+    )
+    blueprint_id = client.get("/api/v1/blueprints").json()["items"][0]["id"]
+    response = client.post(f"/api/v1/blueprints/{blueprint_id}/sections/unknown/regenerate")
+
+    assert response.status_code == 404
+
+
 def test_delete_blueprint_removes_saved_blueprint(monkeypatch) -> None:
     monkeypatch.setattr(settings, "use_openai", False)
     blueprint_repository.clear()

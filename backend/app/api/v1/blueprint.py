@@ -6,11 +6,19 @@ from app.schemas.blueprint import (
     BlueprintRequest,
     BlueprintRevisionRequest,
     BlueprintResponse,
+    BlueprintSectionRegenerationRequest,
+    BlueprintSectionRegenerationResponse,
     BlueprintSummary,
     StoredBlueprintResponse,
 )
 from app.services.llm_client import BlueprintGenerationError
-from app.services.blueprint_generator import DuplicateBlueprintRevisionError, generate_blueprint, revise_blueprint
+from app.services.blueprint_generator import (
+    DuplicateBlueprintRevisionError,
+    generate_blueprint,
+    normalize_section_name,
+    regenerate_blueprint_section,
+    revise_blueprint,
+)
 
 
 router = APIRouter(prefix="/blueprint", tags=["blueprint"])
@@ -75,6 +83,39 @@ def revise_stored_blueprint(blueprint_id: str, payload: BlueprintRevisionRequest
         revision_instruction=revised_blueprint.revision_instruction,
         created_at=revised_blueprint.created_at,
         result=revised_blueprint.result,
+    )
+
+
+@blueprints_router.post(
+    "/{blueprint_id}/sections/{section}/regenerate",
+    response_model=BlueprintSectionRegenerationResponse,
+)
+def regenerate_stored_blueprint_section(
+    blueprint_id: str,
+    section: str,
+    payload: BlueprintSectionRegenerationRequest | None = None,
+) -> BlueprintSectionRegenerationResponse:
+    stored_blueprint = blueprint_repository.get_by_id(blueprint_id)
+
+    if stored_blueprint is None:
+        raise HTTPException(status_code=404, detail="재생성할 설계도를 찾을 수 없습니다.")
+
+    try:
+        regenerated_blueprint = regenerate_blueprint_section(
+            stored_blueprint.idea,
+            stored_blueprint.result,
+            section,
+            payload.instruction if payload else None,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except BlueprintGenerationError as exc:
+        # 부분 재생성도 전체 설계 품질 검증을 통과해야 preview로 사용할 수 있습니다.
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    return BlueprintSectionRegenerationResponse(
+        section=normalize_section_name(section),
+        result=regenerated_blueprint,
     )
 
 

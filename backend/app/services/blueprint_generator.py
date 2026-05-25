@@ -33,10 +33,12 @@ from app.services.prompts import (
     build_feature_design_prompt,
     build_idea_analysis_prompt,
     build_planning_design_prompt,
+    build_section_regeneration_prompt,
 )
 
 
 MAX_OPENAI_GENERATION_ATTEMPTS = 3
+REGENERATABLE_SECTIONS = {"features", "api", "database", "diagrams", "planning"}
 REVISION_MARKER = "수정:"
 REVISION_STOPWORDS = {
     "같은",
@@ -102,6 +104,91 @@ def revise_blueprint(idea: str, current_blueprint: BlueprintResponse, instructio
         idea=base_idea,
         revision_instruction=revision_instruction,
     )
+
+
+def regenerate_blueprint_section(
+    idea: str,
+    current_blueprint: BlueprintResponse,
+    section: str,
+    instruction: str | None = None,
+) -> BlueprintResponse:
+    """저장된 설계도를 덮어쓰지 않고 특정 섹션만 다시 생성한 미리보기 설계도를 반환합니다."""
+    normalized_section = normalize_section_name(section)
+
+    if normalized_section not in REGENERATABLE_SECTIONS:
+        raise ValueError("지원하지 않는 설계도 섹션입니다.")
+
+    if not settings.use_openai:
+        blueprint = build_placeholder_section_regeneration(current_blueprint, normalized_section, instruction)
+    else:
+        blueprint = regenerate_blueprint_section_with_retry(
+            idea,
+            current_blueprint,
+            normalized_section,
+            instruction,
+        )
+
+    validate_blueprint_quality(blueprint)
+    return blueprint
+
+
+def regenerate_blueprint_section_with_retry(
+    idea: str,
+    current_blueprint: BlueprintResponse,
+    section: str,
+    instruction: str | None = None,
+) -> BlueprintResponse:
+    """부분 재생성 결과가 전체 설계 품질을 깨뜨리면 feedback과 함께 같은 섹션을 재시도합니다."""
+    validation_feedback: list[str] | None = None
+    last_errors: list[str] = []
+
+    for _ in range(MAX_OPENAI_GENERATION_ATTEMPTS):
+        blueprint = regenerate_blueprint_section_once(idea, current_blueprint, section, instruction, validation_feedback)
+        errors = collect_blueprint_quality_errors(blueprint)
+
+        if not errors:
+            return blueprint
+
+        last_errors = errors
+        validation_feedback = errors
+
+    joined_errors = "; ".join(last_errors)
+    raise BlueprintGenerationError(f"섹션 재생성 품질 검증 재시도에 실패했습니다: {joined_errors}")
+
+
+def regenerate_blueprint_section_once(
+    idea: str,
+    current_blueprint: BlueprintResponse,
+    section: str,
+    instruction: str | None,
+    validation_feedback: list[str] | None = None,
+) -> BlueprintResponse:
+    """선택한 섹션의 structured output만 받아 기존 설계도에 합칩니다."""
+    prompt = build_section_regeneration_prompt(idea, current_blueprint, section, instruction)
+    blueprint = current_blueprint.model_copy(deep=True)
+
+    if section == "features":
+        feature_design = request_structured_output_from_openai(prompt, FeatureDesign, validation_feedback)
+        blueprint.overview = feature_design.overview
+        blueprint.features = feature_design.features
+        blueprint.tech_stack = feature_design.tech_stack
+    elif section == "api":
+        api_design = request_structured_output_from_openai(prompt, ApiDesign, validation_feedback)
+        blueprint.api_spec = api_design.api_spec
+    elif section == "database":
+        database_design = request_structured_output_from_openai(prompt, DatabaseDesign, validation_feedback)
+        blueprint.database_schema = database_design.database_schema
+    elif section == "diagrams":
+        diagram_design = request_structured_output_from_openai(prompt, DiagramDesign, validation_feedback)
+        blueprint.database_erd = diagram_design.database_erd
+        blueprint.sequence_diagram = diagram_design.sequence_diagram
+    elif section == "planning":
+        planning_design = request_structured_output_from_openai(prompt, PlanningDesign, validation_feedback)
+        blueprint.non_functional_requirements = planning_design.non_functional_requirements
+        blueprint.security_considerations = planning_design.security_considerations
+        blueprint.implementation_plan = planning_design.implementation_plan
+
+    return blueprint
 
 
 def generate_blueprint_with_retry(user_prompt: str) -> BlueprintResponse:
@@ -281,6 +368,29 @@ def build_placeholder_revision_blueprint(
     return blueprint
 
 
+def build_placeholder_section_regeneration(
+    current_blueprint: BlueprintResponse,
+    section: str,
+    instruction: str | None = None,
+) -> BlueprintResponse:
+    """OpenAI 없이도 섹션별 재생성 preview 흐름을 확인할 수 있게 선택 섹션에만 변경 흔적을 남깁니다."""
+    blueprint = current_blueprint.model_copy(deep=True)
+    suffix = f" 추가 지시사항 '{instruction.strip()}'을 반영했습니다." if instruction else " 섹션 재생성 preview를 반영했습니다."
+
+    if section == "features" and blueprint.features:
+        blueprint.features[0].description = f"{blueprint.features[0].description}{suffix}"
+    elif section == "api" and blueprint.api_spec:
+        blueprint.api_spec[0].description = f"{blueprint.api_spec[0].description}{suffix}"
+    elif section == "database" and blueprint.database_schema:
+        blueprint.database_schema[0].description = f"{blueprint.database_schema[0].description}{suffix}"
+    elif section == "diagrams":
+        blueprint.sequence_diagram = f"{blueprint.sequence_diagram.rstrip()}\n  User->>UI: 재생성된 다이어그램 확인"
+    elif section == "planning" and blueprint.implementation_plan:
+        blueprint.implementation_plan[0].description = f"{blueprint.implementation_plan[0].description}{suffix}"
+
+    return blueprint
+
+
 def build_placeholder_blueprint(payload: BlueprintRequest) -> BlueprintResponse:
     """OpenAI 연동 없이도 API와 화면을 검증할 수 있는 예시 설계도를 생성합니다."""
     idea = payload.idea.strip()
@@ -417,3 +527,18 @@ def build_placeholder_blueprint(payload: BlueprintRequest) -> BlueprintResponse:
             ),
         ],
     )
+
+
+def normalize_section_name(section: str) -> str:
+    """URL path에서 받은 섹션 이름을 내부 처리 이름으로 정규화합니다."""
+    aliases = {
+        "api_spec": "api",
+        "apis": "api",
+        "database_schema": "database",
+        "db": "database",
+        "diagram": "diagrams",
+        "plan": "planning",
+        "implementation_plan": "planning",
+    }
+    normalized = section.strip().lower().replace("_section", "")
+    return aliases.get(normalized, normalized)

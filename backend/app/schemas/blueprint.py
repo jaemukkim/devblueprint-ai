@@ -17,6 +17,14 @@ class BlueprintRevisionRequest(BaseModel):
     instruction: str = Field(..., min_length=5, description="설계도를 어떻게 수정할지 설명한 요청입니다.")
 
 
+class BlueprintSectionRegenerationRequest(BaseModel):
+    instruction: str | None = Field(
+        default=None,
+        min_length=5,
+        description="특정 섹션을 다시 생성할 때 반영할 추가 지시사항입니다.",
+    )
+
+
 class Feature(BaseModel):
     name: str
     description: str
@@ -68,7 +76,7 @@ class DatabaseTable(BaseModel):
     description: str
     columns: list[DatabaseColumn]
 
-
+# 설계 시 고려사항을 담는 모델입니다.
 class DesignConsideration(BaseModel):
     category: str
     title: str
@@ -108,7 +116,6 @@ class DiagramDesign(BaseModel):
     database_erd: str
     sequence_diagram: str
 
-
 class PlanningDesign(BaseModel):
     non_functional_requirements: list[DesignConsideration]
     security_considerations: list[DesignConsideration]
@@ -142,6 +149,11 @@ class BlueprintSummary(BaseModel):
 # 저장된 설계도 상세 조회 응답입니다.
 # 목록 정보와 함께 실제 생성 결과 전체를 result에 담습니다.
 class StoredBlueprintResponse(BlueprintSummary):
+    result: BlueprintResponse
+
+
+class BlueprintSectionRegenerationResponse(BaseModel):
+    section: str
     result: BlueprintResponse
 
 

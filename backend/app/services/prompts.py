@@ -100,7 +100,7 @@ def build_api_design_prompt(idea: str, analysis: object, feature_design: object)
 Design only the REST API endpoints for this service.
 
 Service idea:
-{idea.strip()}feat: 설계도 계획 섹션 추가feat: 설계도 계획 섹션 추가feat: 설계도 계획 섹션 추가feat: 설계도 계획 섹션 추가feat: 설계도 계획 섹션 추가feat: 설계도 계획 섹션 추가feat: 설계도 계획 섹션 추가
+{idea.strip()}
 
 Idea analysis JSON:
 {_dump_context(analysis)}
@@ -188,6 +188,37 @@ Database design JSON:
 
 Return 3 to 6 non-functional requirements, 3 to 6 security considerations, and 3 to 6 ordered implementation steps.
 Make every item specific to this service and avoid generic advice.
+"""
+
+
+def build_section_regeneration_prompt(
+    idea: str,
+    current_blueprint: BlueprintResponse,
+    section: str,
+    instruction: str | None = None,
+) -> str:
+    """기존 설계도 맥락을 유지하면서 특정 섹션만 다시 생성하도록 지시합니다."""
+    extra_instruction = instruction.strip() if instruction else "Improve this section while preserving the current product scope."
+
+    return f"""
+Regenerate only the requested section of the existing system blueprint.
+
+Original service idea:
+{idea.strip()}
+
+Requested section:
+{section}
+
+Additional instruction:
+{extra_instruction}
+
+Current blueprint JSON:
+{current_blueprint.model_dump_json(indent=2)}
+
+Return only the structured output for the requested section.
+Keep the regenerated section consistent with the current features, API endpoints, database tables, diagrams, security considerations, and implementation plan.
+Do not redesign unrelated sections.
+Write user-facing descriptions in Korean and keep technical identifiers in English.
 """
 
 
