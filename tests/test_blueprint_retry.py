@@ -206,11 +206,12 @@ def test_generate_blueprint_pipeline_assembles_section_outputs(monkeypatch) -> N
             implementation_plan=make_implementation_plan(),
         ),
     ]
+    section_output_by_format = {type(output): output for output in section_outputs}
     requested_formats = []
 
     def fake_request_structured_output(user_prompt, text_format, validation_feedback=None):
         requested_formats.append(text_format)
-        return section_outputs.pop(0)
+        return section_output_by_format[text_format]
 
     monkeypatch.setattr(
         "app.services.blueprint_generator.request_structured_output_from_openai",
@@ -222,14 +223,16 @@ def test_generate_blueprint_pipeline_assembles_section_outputs(monkeypatch) -> N
     assert result.overview == "테스트용 설계도입니다."
     assert result.api_spec[0].path == "/api/v1/books"
     assert len(result.non_functional_requirements) == 3
-    assert requested_formats == [
+    assert requested_formats[:4] == [
         IdeaAnalysis,
         FeatureDesign,
         ApiDesign,
         DatabaseDesign,
+    ]
+    assert set(requested_formats[4:]) == {
         DiagramDesign,
         PlanningDesign,
-    ]
+    }
 
 
 def test_regenerate_feature_section_adds_requested_feature_when_llm_omits_it(monkeypatch) -> None:

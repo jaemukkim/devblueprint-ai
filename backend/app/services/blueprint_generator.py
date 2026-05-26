@@ -1,3 +1,5 @@
+from concurrent.futures import ThreadPoolExecutor
+
 from app.core.config import settings
 from app.repositories.blueprint_repository import StoredBlueprint, blueprint_repository
 from app.schemas.blueprint import (
@@ -393,18 +395,43 @@ def generate_blueprint_pipeline(
         DatabaseDesign,
         validation_feedback=validation_feedback,
     )
-    diagram_design = request_structured_output_from_openai(
-        build_diagram_design_prompt(idea, analysis, api_design, database_design),
-        DiagramDesign,
-        validation_feedback=validation_feedback,
-    )
-    planning_design = request_structured_output_from_openai(
-        build_planning_design_prompt(idea, analysis, feature_design, api_design, database_design),
-        PlanningDesign,
-        validation_feedback=validation_feedback,
+    diagram_design, planning_design = generate_final_blueprint_sections(
+        idea,
+        analysis,
+        feature_design,
+        api_design,
+        database_design,
+        validation_feedback,
     )
 
     return assemble_blueprint(feature_design, api_design, database_design, diagram_design, planning_design)
+
+
+def generate_final_blueprint_sections(
+    idea: str,
+    analysis: IdeaAnalysis,
+    feature_design: FeatureDesign,
+    api_design: ApiDesign,
+    database_design: DatabaseDesign,
+    validation_feedback: list[str] | None = None,
+) -> tuple[DiagramDesign, PlanningDesign]:
+    """서로 독립적인 다이어그램/계획 섹션을 병렬 생성해 전체 대기 시간을 줄입니다."""
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        # 두 섹션 모두 앞선 산출물만 읽기 때문에 동시에 요청해도 결과 일관성이 깨지지 않습니다.
+        diagram_future = executor.submit(
+            request_structured_output_from_openai,
+            build_diagram_design_prompt(idea, analysis, api_design, database_design),
+            DiagramDesign,
+            validation_feedback,
+        )
+        planning_future = executor.submit(
+            request_structured_output_from_openai,
+            build_planning_design_prompt(idea, analysis, feature_design, api_design, database_design),
+            PlanningDesign,
+            validation_feedback,
+        )
+
+        return diagram_future.result(), planning_future.result()
 
 
 def assemble_blueprint(
