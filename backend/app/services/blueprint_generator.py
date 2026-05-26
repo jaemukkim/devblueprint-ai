@@ -42,6 +42,7 @@ from app.services.prompts import (
 
 
 MAX_OPENAI_GENERATION_ATTEMPTS = 3
+MAX_OPENAI_PIPELINE_ATTEMPTS = 1
 REGENERATABLE_SECTIONS = {"features", "api", "database", "diagrams", "planning"}
 REVISION_MARKER = "수정:"
 REVISION_STOPWORDS = {
@@ -351,7 +352,7 @@ def generate_blueprint_pipeline_with_retry(payload: BlueprintRequest) -> Bluepri
     validation_feedback: list[str] | None = None
     last_errors: list[str] = []
 
-    for _ in range(MAX_OPENAI_GENERATION_ATTEMPTS):
+    for _ in range(MAX_OPENAI_PIPELINE_ATTEMPTS):
         blueprint = generate_blueprint_pipeline(payload, validation_feedback)
         errors = collect_blueprint_quality_errors(blueprint)
 

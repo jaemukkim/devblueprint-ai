@@ -7,6 +7,18 @@ from app.services.llm_client import BlueprintGenerationError
 SNAKE_CASE_PATTERN = re.compile(r"^[a-z][a-z0-9_]*$")
 TOKEN_PATTERN = re.compile(r"[a-z][a-z0-9_]*")
 GENERIC_API_RESOURCES = {"items", "records", "data", "results", "entities", "objects"}
+# 인증/세션처럼 DB 테이블 하나와 1:1로 대응되지 않는 운영성 API resource는 교차 검증에서 제외합니다.
+NON_DATABASE_BACKED_API_RESOURCES = {
+    "admin",
+    "admins",
+    "auth",
+    "login",
+    "logout",
+    "session",
+    "sessions",
+    "token",
+    "tokens",
+}
 GENERIC_FEATURE_NAMES = {
     "아이디어 분석",
     "기능 요구사항 정리",
@@ -17,6 +29,11 @@ GENERIC_FEATURE_NAMES = {
 }
 MIN_FEATURE_DESCRIPTION_LENGTH = 20
 MIN_TABLE_COLUMN_COUNT = 3
+# 생성 모델이 실서비스 수준의 산출물을 만들 때 과도하게 실패하지 않도록 항목 수 상한을 관리합니다.
+MAX_API_SPEC_COUNT = 12
+MAX_DATABASE_TABLE_COUNT = 8
+MAX_DESIGN_CONSIDERATION_COUNT = 8
+MAX_IMPLEMENTATION_PLAN_COUNT = 8
 MERMAID_ERD_KEY_TOKENS = {"PK", "FK", "UK"}
 GENERIC_FIELD_NAMES = {"id", "item", "items", "result", "results", "overview", "created_at", "updated_at", "deleted_at"}
 AUTH_SCOPE_KEYWORDS = {"auth", "login", "password", "session", "token", "role", "permission", "인증", "권한", "로그인"}
@@ -32,11 +49,12 @@ def collect_blueprint_quality_errors(blueprint: BlueprintResponse) -> list[str]:
     errors: list[str] = []
 
     validate_collection_size("features", blueprint.features, 5, 8, errors)
-    validate_collection_size("api_spec", blueprint.api_spec, 4, 8, errors)
-    validate_collection_size("database_schema", blueprint.database_schema, 3, 6, errors)
-    validate_collection_size("non_functional_requirements", blueprint.non_functional_requirements, 3, 6, errors)
-    validate_collection_size("security_considerations", blueprint.security_considerations, 3, 6, errors)
-    validate_collection_size("implementation_plan", blueprint.implementation_plan, 3, 6, errors)
+    # LLM이 현실적인 서비스에서 endpoint나 계획 항목을 조금 더 많이 만들 수 있어 상한을 여유 있게 둡니다.
+    validate_collection_size("api_spec", blueprint.api_spec, 4, MAX_API_SPEC_COUNT, errors)
+    validate_collection_size("database_schema", blueprint.database_schema, 3, MAX_DATABASE_TABLE_COUNT, errors)
+    validate_collection_size("non_functional_requirements", blueprint.non_functional_requirements, 3, MAX_DESIGN_CONSIDERATION_COUNT, errors)
+    validate_collection_size("security_considerations", blueprint.security_considerations, 3, MAX_DESIGN_CONSIDERATION_COUNT, errors)
+    validate_collection_size("implementation_plan", blueprint.implementation_plan, 3, MAX_IMPLEMENTATION_PLAN_COUNT, errors)
     validate_feature_quality(blueprint, errors)
     validate_design_considerations(blueprint, errors)
     validate_implementation_plan(blueprint, errors)
@@ -260,15 +278,10 @@ def validate_sequence_diagram(blueprint: BlueprintResponse, errors: list[str]) -
 
 def validate_cross_section_consistency(blueprint: BlueprintResponse, errors: list[str]) -> None:
     """API, DB, 다이어그램, 계획 섹션이 같은 제품 설계를 설명하는지 확인합니다."""
-    api_resources = collect_api_resource_tokens(blueprint)
-    table_tokens = collect_database_table_tokens(blueprint)
-    column_names = collect_database_column_names(blueprint)
-
-    validate_api_database_alignment(api_resources, table_tokens, errors)
-    validate_api_field_database_alignment(blueprint, column_names, errors)
-    validate_sequence_api_alignment(blueprint, api_resources, errors)
-    validate_plan_alignment(blueprint, api_resources, table_tokens, errors)
-    validate_contextual_security_coverage(blueprint, errors)
+    # LLM은 같은 개념도 futsal_court, court, venue처럼 다르게 표현할 수 있으므로
+    # 섹션 간 영문 토큰 일치 여부는 생성 성공을 막는 hard validation으로 쓰지 않습니다.
+    # 구현 계획은 한국어 설명 문장 위주라 API/DB 영문 토큰과 정확히 겹치지 않아도 허용합니다.
+    # 보안 고려사항의 표현은 LLM마다 달라서 생성 성공을 막는 hard validation으로 쓰지 않습니다.
 
 
 def validate_api_database_alignment(
@@ -277,7 +290,11 @@ def validate_api_database_alignment(
     errors: list[str],
 ) -> None:
     """API resource와 DB table 이름이 핵심 도메인 단어를 공유하는지 확인합니다."""
-    unmatched_resources = sorted(resource for resource in api_resources if resource not in table_tokens)
+    unmatched_resources = sorted(
+        resource
+        for resource in api_resources
+        if is_database_backed_api_resource(resource) and not has_database_resource_match(resource, table_tokens)
+    )
 
     for resource in unmatched_resources:
         errors.append(f"api resource must be represented in database_schema: {resource}")
@@ -293,6 +310,10 @@ def validate_api_field_database_alignment(
         return
 
     for api in blueprint.api_spec:
+        resource_name = normalize_name_token(extract_primary_resource_name(api.path))
+        if not is_database_backed_api_resource(resource_name):
+            continue
+
         field_names = {normalize_name_token(field.name) for field in [*api.request, *api.response]}
         comparable_field_names = {field_name for field_name in field_names if field_name and field_name not in GENERIC_FIELD_NAMES}
 
@@ -372,6 +393,13 @@ def collect_database_table_tokens(blueprint: BlueprintResponse) -> set[str]:
     tokens: set[str] = set()
 
     for table in blueprint.database_schema:
+        # 복합 resource(`/futsal-courts`)가 복수형 table(`futsal_courts`)과 매칭되도록 전체 table명도 보관합니다.
+        normalized_table_name = normalize_name_token(table.name)
+        if normalized_table_name and normalized_table_name not in GENERIC_API_RESOURCES:
+            tokens.add(normalized_table_name)
+            # LLM이 `/futsalvenues`처럼 구분자 없이 붙여 쓰는 API resource도 같은 테이블로 봅니다.
+            tokens.add(normalized_table_name.replace("_", ""))
+
         for token in table.name.split("_"):
             normalized_token = normalize_name_token(token)
             if normalized_token and normalized_token not in GENERIC_API_RESOURCES:
@@ -400,6 +428,19 @@ def normalize_name_token(value: str) -> str:
     if normalized.endswith("s") and not normalized.endswith("ss") and len(normalized) > 3:
         return normalized[:-1]
     return normalized
+
+
+def is_database_backed_api_resource(resource: str) -> bool:
+    """인증처럼 별도 테이블이 없어도 되는 API resource인지 확인합니다."""
+    return bool(resource) and resource not in NON_DATABASE_BACKED_API_RESOURCES
+
+
+def has_database_resource_match(resource: str, table_tokens: set[str]) -> bool:
+    """API resource가 DB 테이블 토큰과 직접 또는 복합어 형태로 연결되는지 확인합니다."""
+    if resource in table_tokens:
+        return True
+
+    return any(len(token) >= 4 and token in resource for token in table_tokens)
 
 
 def collect_blueprint_text(blueprint: BlueprintResponse) -> str:

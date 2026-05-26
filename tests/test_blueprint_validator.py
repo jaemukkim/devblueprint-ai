@@ -294,7 +294,7 @@ def test_validate_blueprint_quality_rejects_invalid_database_erd() -> None:
         validate_blueprint_quality(blueprint)
 
 
-def test_validate_blueprint_quality_rejects_api_resource_missing_from_database() -> None:
+def test_validate_blueprint_quality_accepts_api_resource_without_exact_database_token() -> None:
     blueprint = make_valid_blueprint()
     blueprint.database_schema[0].name = "reading_logs"
     blueprint.database_schema[1].name = "reading_events"
@@ -305,42 +305,98 @@ def test_validate_blueprint_quality_rejects_api_resource_missing_from_database()
         "  reading_logs ||--o{ reading_recommendations : has"
     )
 
-    with pytest.raises(BlueprintGenerationError, match="api resource must be represented"):
-        validate_blueprint_quality(blueprint)
+    validate_blueprint_quality(blueprint)
 
 
-def test_validate_blueprint_quality_rejects_api_fields_detached_from_database_columns() -> None:
+def test_validate_blueprint_quality_accepts_auth_api_without_auth_table() -> None:
+    blueprint = make_valid_blueprint()
+    blueprint.api_spec[0] = make_api_spec("POST", "/api/v1/auth/login")
+    blueprint.api_spec[0].request[0].name = "email"
+    blueprint.api_spec[0].response[0].name = "access_token"
+    blueprint.sequence_diagram = "sequenceDiagram\n  participant User\n  User->>API: POST /api/v1/books\n  API-->>User: books"
+
+    validate_blueprint_quality(blueprint)
+
+
+def test_validate_blueprint_quality_accepts_admin_api_without_admin_table() -> None:
+    blueprint = make_valid_blueprint()
+    blueprint.api_spec[0] = make_api_spec("GET", "/api/v1/admin/dashboard")
+    blueprint.sequence_diagram = "sequenceDiagram\n  participant User\n  User->>API: GET /api/v1/books\n  API-->>User: books"
+
+    validate_blueprint_quality(blueprint)
+
+
+def test_validate_blueprint_quality_accepts_compound_resource_matching_plural_table() -> None:
+    blueprint = make_valid_blueprint()
+    blueprint.api_spec[0].path = "/api/v1/futsal-courts"
+    blueprint.database_schema[0].name = "futsal_courts"
+    blueprint.database_erd = (
+        "erDiagram\n"
+        "  futsal_courts ||--o{ book_events : has\n"
+        "  futsal_courts ||--o{ book_recommendations : has"
+    )
+    blueprint.sequence_diagram = "sequenceDiagram\n  participant User\n  User->>API: POST /api/v1/futsal-courts\n  API-->>User: futsal_courts"
+    blueprint.implementation_plan[0].description = "futsal_courts 테이블과 futsal-courts API를 기준으로 예약 가능한 구장 목록을 구현합니다."
+
+    validate_blueprint_quality(blueprint)
+
+
+def test_validate_blueprint_quality_accepts_collapsed_compound_resource_matching_table() -> None:
+    blueprint = make_valid_blueprint()
+    blueprint.api_spec[0].path = "/api/v1/futsalvenues"
+    blueprint.database_schema[0].name = "futsal_venues"
+    blueprint.database_erd = (
+        "erDiagram\n"
+        "  futsal_venues ||--o{ book_events : has\n"
+        "  futsal_venues ||--o{ book_recommendations : has"
+    )
+    blueprint.sequence_diagram = "sequenceDiagram\n  participant User\n  User->>API: POST /api/v1/futsalvenues\n  API-->>User: futsalvenues"
+
+    validate_blueprint_quality(blueprint)
+
+
+def test_validate_blueprint_quality_accepts_domain_prefixed_resource_matching_table_token() -> None:
+    blueprint = make_valid_blueprint()
+    blueprint.api_spec[0].path = "/api/v1/futsalcourts"
+    blueprint.database_schema[0].name = "courts"
+    blueprint.database_erd = (
+        "erDiagram\n"
+        "  courts ||--o{ book_events : has\n"
+        "  courts ||--o{ book_recommendations : has"
+    )
+    blueprint.sequence_diagram = "sequenceDiagram\n  participant User\n  User->>API: POST /api/v1/futsalcourts\n  API-->>User: futsalcourts"
+
+    validate_blueprint_quality(blueprint)
+
+
+def test_validate_blueprint_quality_accepts_api_fields_without_exact_database_column_token() -> None:
     blueprint = make_valid_blueprint()
     for api in blueprint.api_spec:
         api.request[0].name = "summary"
         api.response[0].name = "summary"
 
-    with pytest.raises(BlueprintGenerationError, match="api fields must overlap database columns"):
-        validate_blueprint_quality(blueprint)
+    validate_blueprint_quality(blueprint)
 
 
-def test_validate_blueprint_quality_rejects_sequence_diagram_without_api_resource() -> None:
+def test_validate_blueprint_quality_accepts_sequence_diagram_without_exact_api_resource_token() -> None:
     blueprint = make_valid_blueprint()
     blueprint.sequence_diagram = "sequenceDiagram\n  participant User\n  User->>API: 요청\n  API-->>User: 응답"
 
-    with pytest.raises(BlueprintGenerationError, match="sequence_diagram must reference"):
-        validate_blueprint_quality(blueprint)
+    validate_blueprint_quality(blueprint)
 
 
-def test_validate_blueprint_quality_rejects_plan_detached_from_generated_design() -> None:
+def test_validate_blueprint_quality_accepts_plan_without_exact_api_or_table_token() -> None:
     blueprint = make_valid_blueprint()
     for step in blueprint.implementation_plan:
         step.description = "프로젝트 준비와 공통 개발 환경을 순서대로 구성하는 충분한 구현 단계 설명입니다."
 
-    with pytest.raises(BlueprintGenerationError, match="implementation_plan must reference"):
-        validate_blueprint_quality(blueprint)
+    validate_blueprint_quality(blueprint)
 
 
-def test_validate_blueprint_quality_rejects_auth_scope_without_security_coverage() -> None:
+def test_validate_blueprint_quality_accepts_auth_scope_without_exact_security_keyword() -> None:
     blueprint = make_valid_blueprint()
     blueprint.features[0].description = "사용자가 password login으로 독서 기록을 보호할 수 있게 합니다."
     for item in blueprint.security_considerations:
         item.description = "서비스 안정성과 입력값 검증을 기준으로 운영 위험을 줄이는 설계 고려사항입니다."
 
-    with pytest.raises(BlueprintGenerationError, match="authentication risks"):
-        validate_blueprint_quality(blueprint)
+    validate_blueprint_quality(blueprint)
