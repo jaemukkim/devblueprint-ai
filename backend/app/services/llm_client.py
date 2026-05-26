@@ -1,3 +1,4 @@
+import httpx
 from openai import OpenAI, OpenAIError
 
 from app.core.config import settings
@@ -32,7 +33,7 @@ def request_structured_output_from_openai(
     if not settings.openai_api_key:
         raise BlueprintGenerationError("OPENAI_API_KEY가 설정되어 있지 않습니다.")
 
-    client = OpenAI(api_key=settings.openai_api_key)
+    client = create_openai_client()
     prompt = append_validation_feedback(user_prompt, validation_feedback)
 
     try:
@@ -53,6 +54,12 @@ def request_structured_output_from_openai(
         raise BlueprintGenerationError(f"OpenAI 응답을 {text_format.__name__} 형식으로 파싱하지 못했습니다.")
 
     return response.output_parsed
+
+
+def create_openai_client() -> OpenAI:
+    """로컬 개발 환경의 프록시 변수 때문에 OpenAI 호출이 막히지 않도록 전용 HTTP 클라이언트를 만듭니다."""
+    http_client = httpx.Client(trust_env=False)
+    return OpenAI(api_key=settings.openai_api_key, http_client=http_client)
 
 
 def append_validation_feedback(user_prompt: str, validation_feedback: list[str] | None) -> str:
