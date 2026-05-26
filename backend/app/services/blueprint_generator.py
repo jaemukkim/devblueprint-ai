@@ -25,6 +25,7 @@ from app.services.blueprint_validator import (
     collect_blueprint_section_quality_errors,
     validate_blueprint_quality,
 )
+from app.services.blueprint_normalizer import normalize_blueprint_output
 from app.services.llm_client import (
     BlueprintGenerationError,
     request_blueprint_from_openai,
@@ -83,6 +84,7 @@ def generate_blueprint(payload: BlueprintRequest) -> BlueprintResponse:
     else:
         blueprint = generate_blueprint_pipeline_with_retry(payload)
 
+    blueprint = normalize_blueprint_output(blueprint)
     validate_blueprint_quality(blueprint)
     blueprint_repository.save(cache_key, blueprint, idea=payload.idea.strip())
     return blueprint
@@ -104,6 +106,7 @@ def revise_blueprint(idea: str, current_blueprint: BlueprintResponse, instructio
         user_prompt = build_blueprint_revision_prompt(base_idea, current_blueprint, revision_instruction)
         blueprint = generate_blueprint_with_retry(user_prompt)
 
+    blueprint = normalize_blueprint_output(blueprint)
     validate_blueprint_quality(blueprint)
     return blueprint_repository.save(
         revision_cache_key,
@@ -135,6 +138,7 @@ def regenerate_blueprint_section(
             instruction,
         )
 
+    blueprint = normalize_blueprint_output(blueprint)
     section_errors = collect_blueprint_section_quality_errors(blueprint, normalized_section)
     if section_errors:
         joined_errors = "; ".join(section_errors)
@@ -153,7 +157,9 @@ def regenerate_blueprint_section_with_retry(
     last_errors: list[str] = []
 
     for _ in range(MAX_OPENAI_GENERATION_ATTEMPTS):
-        blueprint = regenerate_blueprint_section_once(idea, current_blueprint, section, instruction, validation_feedback)
+        blueprint = normalize_blueprint_output(
+            regenerate_blueprint_section_once(idea, current_blueprint, section, instruction, validation_feedback)
+        )
         errors = [
             *collect_blueprint_section_quality_errors(blueprint, section),
             *collect_section_regeneration_errors(current_blueprint, blueprint, section, instruction),
@@ -336,7 +342,7 @@ def generate_blueprint_with_retry(user_prompt: str) -> BlueprintResponse:
     last_errors: list[str] = []
 
     for _ in range(MAX_OPENAI_GENERATION_ATTEMPTS):
-        blueprint = request_blueprint_from_openai(user_prompt, validation_feedback)
+        blueprint = normalize_blueprint_output(request_blueprint_from_openai(user_prompt, validation_feedback))
         errors = collect_blueprint_quality_errors(blueprint)
 
         if not errors:
@@ -442,17 +448,19 @@ def assemble_blueprint(
     planning_design: PlanningDesign,
 ) -> BlueprintResponse:
     """섹션별 생성 결과를 기존 API 응답 계약인 BlueprintResponse로 조립합니다."""
-    return BlueprintResponse(
-        overview=feature_design.overview,
-        features=feature_design.features,
-        tech_stack=feature_design.tech_stack,
-        api_spec=api_design.api_spec,
-        database_schema=database_design.database_schema,
-        database_erd=diagram_design.database_erd,
-        sequence_diagram=diagram_design.sequence_diagram,
-        non_functional_requirements=planning_design.non_functional_requirements,
-        security_considerations=planning_design.security_considerations,
-        implementation_plan=planning_design.implementation_plan,
+    return normalize_blueprint_output(
+        BlueprintResponse(
+            overview=feature_design.overview,
+            features=feature_design.features,
+            tech_stack=feature_design.tech_stack,
+            api_spec=api_design.api_spec,
+            database_schema=database_design.database_schema,
+            database_erd=diagram_design.database_erd,
+            sequence_diagram=diagram_design.sequence_diagram,
+            non_functional_requirements=planning_design.non_functional_requirements,
+            security_considerations=planning_design.security_considerations,
+            implementation_plan=planning_design.implementation_plan,
+        )
     )
 
 
