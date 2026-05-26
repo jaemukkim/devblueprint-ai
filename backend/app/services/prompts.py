@@ -22,7 +22,7 @@ Follow these rules:
 - Include 3 to 6 security considerations covering authentication, authorization, data validation, privacy, audit logging, rate limiting, or abuse prevention when relevant.
 - Include 3 to 6 implementation plan steps that a developer could follow in order.
 - Return database_erd as a valid Mermaid erDiagram that matches database_schema.
-- In Mermaid erDiagram entity attributes, use only PK, FK, and UK key tokens. Use UK for unique columns, not UNIQUE.
+- In Mermaid erDiagram entity attributes, use only PK, FK, and UK key tokens. Use UK for unique columns, not UNIQUE. If one column needs multiple key tokens, separate them with commas, for example `uuid user_id PK, FK`.
 - Include enough detail for a developer to understand the first implementation plan.
 - Every API path must start with "/" and use REST-style lowercase paths.
 - API paths must be domain-specific resources from the user's idea, not generic paths like /items unless the domain is actually generic inventory.

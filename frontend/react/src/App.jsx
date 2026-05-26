@@ -135,8 +135,15 @@ function normalizeMermaidSource(source) {
   // 저장된 이전 설계도에 남아 있을 수 있는 Mermaid 비호환 key token을 렌더링 전에 보정합니다.
   return source
     .split("\n")
-    .map((line) => line.replace(/\bUNIQUE\b/g, "UK"))
+    .map((line) => normalizeMermaidAttributeLine(line))
     .join("\n");
+}
+
+function normalizeMermaidAttributeLine(line) {
+  // Mermaid ERD는 복수 key token을 `PK, FK`처럼 쉼표로 구분해야 하므로 생성 결과를 렌더링 전에 보정합니다.
+  return line
+    .replace(/\bUNIQUE\b/g, "UK")
+    .replace(/\b(PK|FK|UK)(?:\s+(PK|FK|UK))+\b/g, (keyGroup) => keyGroup.split(/\s+/).join(", "));
 }
 
 function MermaidDiagram({ source }) {
