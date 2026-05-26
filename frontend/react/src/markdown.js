@@ -1,3 +1,5 @@
+import { normalizeMermaidSource } from "./mermaid.js";
+
 function formatFields(fields) {
   if (!fields.length) {
     return "- 없음";
@@ -101,7 +103,7 @@ export function blueprintToMarkdown(blueprint) {
     "",
     "## Database ERD",
     "```mermaid",
-    blueprint.database_erd,
+    normalizeMermaidSource(blueprint.database_erd),
     "```",
     "",
     "## Sequence Diagram",

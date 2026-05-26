@@ -33,6 +33,7 @@ import {
   reviseBlueprint,
 } from "./api.js";
 import { downloadMarkdown } from "./markdown.js";
+import { normalizeMermaidSource } from "./mermaid.js";
 
 const SAMPLE_IDEAS = [
   "챗봇을 이용한 쇼핑몰 고객상담 자동화 서비스",
@@ -125,25 +126,6 @@ function loadMermaid() {
   }
 
   return mermaidLoadPromise;
-}
-
-function normalizeMermaidSource(source) {
-  if (!source.trim().startsWith("erDiagram")) {
-    return source;
-  }
-
-  // 저장된 이전 설계도에 남아 있을 수 있는 Mermaid 비호환 key token을 렌더링 전에 보정합니다.
-  return source
-    .split("\n")
-    .map((line) => normalizeMermaidAttributeLine(line))
-    .join("\n");
-}
-
-function normalizeMermaidAttributeLine(line) {
-  // Mermaid ERD는 복수 key token을 `PK, FK`처럼 쉼표로 구분해야 하므로 생성 결과를 렌더링 전에 보정합니다.
-  return line
-    .replace(/\bUNIQUE\b/g, "UK")
-    .replace(/\b(PK|FK|UK)(?:\s+(PK|FK|UK))+\b/g, (keyGroup) => keyGroup.split(/\s+/).join(", "));
 }
 
 function MermaidDiagram({ source }) {
