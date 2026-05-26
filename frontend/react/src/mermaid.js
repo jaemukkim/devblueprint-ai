@@ -51,6 +51,11 @@ function normalizeMermaidAttributeLine(line) {
   // Mermaid ERD는 복수 key token을 `PK, FK`처럼 쉼표로 구분해야 합니다.
   const normalizedKeyLine = line
     .replace(/\bUNIQUE\b/g, "UK")
+    .replace(/\bUQ\b/gi, "UK")
+    .replace(/\bPRIMARY\s+KEY\b/gi, "PK")
+    .replace(/\bFOREIGN\s+KEY\b/gi, "FK")
+    .replace(/\bNOT\s+NULL\b/gi, "")
+    .replace(/\bNULL\b/gi, "")
     .replace(/\b(PK|FK|UK)(?:\s+(PK|FK|UK))+\b/g, (keyGroup) => keyGroup.split(/\s+/).join(", "));
   return normalizeMermaidAttributeType(normalizedKeyLine);
 }
@@ -63,16 +68,33 @@ function normalizeMermaidAttributeType(line) {
   const keyStartIndex = tokens.findIndex((token) => ["PK", "FK", "UK"].includes(token.replace(",", "")));
 
   if (keyStartIndex > 2) {
-    const type = tokens.slice(0, keyStartIndex - 1).join("_");
+    const type = normalizeMermaidTypeToken(tokens.slice(0, keyStartIndex - 1).join("_"));
     const name = tokens[keyStartIndex - 1];
     return `${indentation}${[type, name, ...tokens.slice(keyStartIndex)].join(" ")}`;
   }
 
   if (keyStartIndex === -1 && tokens.length > 2 && !trimmedLine.includes("\"")) {
-    const type = tokens.slice(0, -1).join("_");
+    const type = normalizeMermaidTypeToken(tokens.slice(0, -1).join("_"));
     const name = tokens[tokens.length - 1];
     return `${indentation}${type} ${name}`;
   }
 
+  if (tokens.length > 0) {
+    const normalizedType = normalizeMermaidTypeToken(tokens[0]);
+    if (normalizedType !== tokens[0]) {
+      return `${indentation}${[normalizedType, ...tokens.slice(1)].join(" ")}`;
+    }
+  }
+
   return line;
+}
+
+// Mermaid attribute type에 괄호, 쉼표, 배열 기호가 섞이면 안전한 단일 토큰으로 바꿉니다.
+function normalizeMermaidTypeToken(value) {
+  const normalized = value
+    .replaceAll("[]", "_array")
+    .replace(/[^A-Za-z0-9_]+/g, "_")
+    .replace(/_+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  return normalized || "text";
 }

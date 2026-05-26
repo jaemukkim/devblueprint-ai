@@ -5,6 +5,10 @@ from app.schemas.blueprint import BlueprintResponse
 
 ERD_KEY_GROUP_PATTERN = re.compile(r"\b(PK|FK|UK)(?:\s+(PK|FK|UK))+\b")
 ERD_UNIQUE_TOKEN_PATTERN = re.compile(r"\b(UNIQUE|UQ)\b", re.IGNORECASE)
+ERD_PRIMARY_KEY_PATTERN = re.compile(r"\bPRIMARY\s+KEY\b", re.IGNORECASE)
+ERD_FOREIGN_KEY_PATTERN = re.compile(r"\bFOREIGN\s+KEY\b", re.IGNORECASE)
+ERD_NOT_NULL_PATTERN = re.compile(r"\bNOT\s+NULL\b", re.IGNORECASE)
+ERD_NULL_TOKEN_PATTERN = re.compile(r"\bNULL\b", re.IGNORECASE)
 
 
 # LLM 응답에 섞일 수 있는 Markdown code fence를 제거해 Mermaid 본문만 남깁니다.
@@ -52,6 +56,10 @@ def normalize_mermaid_erd_source(source: str) -> str:
 # UNIQUE와 공백으로 이어진 복수 key token을 Mermaid 호환 문법으로 바꿉니다.
 def normalize_mermaid_erd_line(line: str) -> str:
     normalized_line = ERD_UNIQUE_TOKEN_PATTERN.sub("UK", line)
+    normalized_line = ERD_PRIMARY_KEY_PATTERN.sub("PK", normalized_line)
+    normalized_line = ERD_FOREIGN_KEY_PATTERN.sub("FK", normalized_line)
+    normalized_line = ERD_NOT_NULL_PATTERN.sub("", normalized_line)
+    normalized_line = ERD_NULL_TOKEN_PATTERN.sub("", normalized_line)
     normalized_line = ERD_KEY_GROUP_PATTERN.sub(lambda key_group: ", ".join(key_group.group(0).split()), normalized_line)
     return normalize_mermaid_erd_attribute_type(normalized_line)
 
@@ -68,16 +76,29 @@ def normalize_mermaid_erd_attribute_type(line: str) -> str:
     )
 
     if key_start_index > 2:
-        column_type = "_".join(tokens[: key_start_index - 1])
+        column_type = normalize_mermaid_type_token("_".join(tokens[: key_start_index - 1]))
         column_name = tokens[key_start_index - 1]
         return f"{indentation}{' '.join([column_type, column_name, *tokens[key_start_index:]])}"
 
     if key_start_index == -1 and len(tokens) > 2 and '"' not in stripped_line:
-        column_type = "_".join(tokens[:-1])
+        column_type = normalize_mermaid_type_token("_".join(tokens[:-1]))
         column_name = tokens[-1]
         return f"{indentation}{column_type} {column_name}"
 
+    if tokens:
+        normalized_type = normalize_mermaid_type_token(tokens[0])
+        if normalized_type != tokens[0]:
+            return f"{indentation}{' '.join([normalized_type, *tokens[1:]])}"
+
     return line
+
+
+# Mermaid attribute type에 괄호, 쉼표, 배열 기호가 섞이면 안전한 단일 토큰으로 바꿉니다.
+def normalize_mermaid_type_token(value: str) -> str:
+    normalized = value.replace("[]", "_array")
+    normalized = re.sub(r"[^A-Za-z0-9_]+", "_", normalized)
+    normalized = re.sub(r"_+", "_", normalized).strip("_")
+    return normalized or "text"
 
 
 # 생성된 설계도 전체에서 자동 보정 가능한 표현을 저장/검증 전에 정규화합니다.

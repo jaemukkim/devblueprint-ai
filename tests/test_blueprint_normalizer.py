@@ -17,6 +17,11 @@ def test_normalize_blueprint_output_fixes_mermaid_erd_key_tokens() -> None:
         "    uuid owner_id PK FK\n"
         "    varchar external_id UNIQUE\n"
         "    timestamp with time zone created_at\n"
+        "    varchar(255) display_name NOT NULL\n"
+        "    decimal(10,2) price NULL\n"
+        "    text[] tags\n"
+        "    integer team_id FOREIGN KEY\n"
+        "    integer legacy_id PRIMARY KEY\n"
         "  }\n"
         "```\n"
     )
@@ -27,6 +32,11 @@ def test_normalize_blueprint_output_fixes_mermaid_erd_key_tokens() -> None:
     assert "uuid owner_id PK, FK" in normalized_blueprint.database_erd
     assert "varchar external_id UK" in normalized_blueprint.database_erd
     assert "timestamp_with_time_zone created_at" in normalized_blueprint.database_erd
+    assert "varchar_255 display_name" in normalized_blueprint.database_erd
+    assert "decimal_10_2 price" in normalized_blueprint.database_erd
+    assert "text_array tags" in normalized_blueprint.database_erd
+    assert "integer team_id FK" in normalized_blueprint.database_erd
+    assert "integer legacy_id PK" in normalized_blueprint.database_erd
     validate_blueprint_quality(normalized_blueprint)
 
 
