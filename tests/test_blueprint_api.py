@@ -269,6 +269,39 @@ def test_regenerate_blueprint_section_returns_preview_without_saving(monkeypatch
     assert blueprint_repository.count() == 1
 
 
+def test_apply_regenerated_section_preview_saves_new_blueprint(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "use_openai", False)
+    blueprint_repository.clear()
+
+    create_response = client.post(
+        "/api/v1/blueprint/generate",
+        json={"idea": "섹션 미리보기 적용 테스트 서비스"},
+    )
+    blueprint_id = client.get("/api/v1/blueprints").json()["items"][0]["id"]
+    regenerate_response = client.post(
+        f"/api/v1/blueprints/{blueprint_id}/sections/planning/regenerate",
+        json={"instruction": "구현 일정을 더 현실적으로 정리해줘"},
+    )
+    preview = regenerate_response.json()
+
+    apply_response = client.post(
+        f"/api/v1/blueprints/{blueprint_id}/sections/planning/apply",
+        json={
+            "instruction": "구현 일정을 더 현실적으로 정리해줘",
+            "result": preview["result"],
+        },
+    )
+
+    assert create_response.status_code == 200
+    assert regenerate_response.status_code == 200
+    assert apply_response.status_code == 200
+    data = apply_response.json()
+    assert data["id"] != blueprint_id
+    assert data["revision_instruction"] == "계획 섹션 재생성 적용: 구현 일정을 더 현실적으로 정리해줘"
+    assert data["result"] == preview["result"]
+    assert blueprint_repository.count() == 2
+
+
 def test_regenerate_blueprint_section_accepts_alias(monkeypatch) -> None:
     monkeypatch.setattr(settings, "use_openai", False)
     blueprint_repository.clear()

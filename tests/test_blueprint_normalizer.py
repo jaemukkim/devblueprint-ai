@@ -16,6 +16,7 @@ def test_normalize_blueprint_output_fixes_mermaid_erd_key_tokens() -> None:
         "    uuid id PK\n"
         "    uuid owner_id PK FK\n"
         "    varchar external_id UNIQUE\n"
+        "    timestamp with time zone created_at\n"
         "  }\n"
         "```\n"
     )
@@ -25,6 +26,7 @@ def test_normalize_blueprint_output_fixes_mermaid_erd_key_tokens() -> None:
     assert normalized_blueprint.database_erd.startswith("erDiagram")
     assert "uuid owner_id PK, FK" in normalized_blueprint.database_erd
     assert "varchar external_id UK" in normalized_blueprint.database_erd
+    assert "timestamp_with_time_zone created_at" in normalized_blueprint.database_erd
     validate_blueprint_quality(normalized_blueprint)
 
 

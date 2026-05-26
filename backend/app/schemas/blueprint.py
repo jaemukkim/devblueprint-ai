@@ -137,6 +137,15 @@ class BlueprintResponse(BaseModel):
     implementation_plan: list[ImplementationStep] = Field(default_factory=list)
 
 
+# 섹션 재생성 미리보기를 새 저장본으로 적용할 때 사용하는 요청 모델입니다.
+class BlueprintSectionApplyRequest(BaseModel):
+    instruction: str | None = Field(
+        default=None,
+        description="미리보기를 만들 때 사용한 추가 지시사항입니다.",
+    )
+    result: BlueprintResponse
+
+
 # 저장된 설계도 목록에서 보여줄 최소 정보입니다.
 # 전체 result를 목록에 모두 싣지 않아 응답 크기를 작게 유지합니다.
 class BlueprintSummary(BaseModel):

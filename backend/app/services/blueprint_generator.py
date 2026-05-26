@@ -1,4 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
+from hashlib import sha256
 
 from app.core.config import settings
 from app.repositories.blueprint_repository import StoredBlueprint, blueprint_repository
@@ -144,6 +145,30 @@ def regenerate_blueprint_section(
         joined_errors = "; ".join(section_errors)
         raise BlueprintGenerationError(f"섹션 재생성 품질 검증에 실패했습니다: {joined_errors}")
     return blueprint
+
+
+def apply_blueprint_section_preview(
+    idea: str,
+    section: str,
+    preview_blueprint: BlueprintResponse,
+    instruction: str | None = None,
+) -> StoredBlueprint:
+    """섹션 재생성 미리보기를 검증한 뒤 원본을 덮어쓰지 않는 새 개선안으로 저장합니다."""
+    normalized_section = normalize_section_name(section)
+
+    if normalized_section not in REGENERATABLE_SECTIONS:
+        raise ValueError("지원하지 않는 설계도 섹션입니다.")
+
+    blueprint = normalize_blueprint_output(preview_blueprint)
+    validate_blueprint_quality(blueprint)
+    revision_instruction = build_section_apply_instruction(normalized_section, instruction)
+    cache_key = build_section_apply_cache_key(idea, normalized_section, blueprint, instruction)
+    return blueprint_repository.save(
+        cache_key,
+        blueprint,
+        idea=strip_revision_suffix(idea),
+        revision_instruction=revision_instruction,
+    )
 
 
 def regenerate_blueprint_section_with_retry(
@@ -480,6 +505,39 @@ def build_revision_cache_key(idea: str, instruction: str) -> str:
     source = "openai" if settings.use_openai else "placeholder"
     normalized_source = normalize_idea(f"{idea} {instruction}")
     return f"{source}:{settings.openai_model}:{BLUEPRINT_PROMPT_VERSION}:revision:{normalized_source}"
+
+
+def build_section_apply_cache_key(
+    idea: str,
+    section: str,
+    blueprint: BlueprintResponse,
+    instruction: str | None = None,
+) -> str:
+    """같은 섹션 미리보기를 반복 적용해도 저장본이 중복 생성되지 않도록 cache key를 만듭니다."""
+    source = "openai" if settings.use_openai else "placeholder"
+    fingerprint_source = f"{get_section_fingerprint(blueprint, section)}:{instruction or ''}"
+    fingerprint = sha256(fingerprint_source.encode("utf-8")).hexdigest()
+    return (
+        f"{source}:{settings.openai_model}:{BLUEPRINT_PROMPT_VERSION}:"
+        f"section-apply:{normalize_idea(idea)}:{section}:{fingerprint}"
+    )
+
+
+def build_section_apply_instruction(section: str, instruction: str | None = None) -> str:
+    """최근 설계도 목록에서 적용한 섹션과 요청 내용을 알아볼 수 있는 설명을 만듭니다."""
+    section_labels = {
+        "features": "기능",
+        "api": "API",
+        "database": "DB",
+        "diagrams": "다이어그램",
+        "planning": "계획",
+    }
+    base_instruction = f"{section_labels.get(section, section)} 섹션 재생성 적용"
+
+    if instruction and instruction.strip():
+        return f"{base_instruction}: {instruction.strip()}"
+
+    return base_instruction
 
 
 def strip_revision_suffix(idea: str) -> str:

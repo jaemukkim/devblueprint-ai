@@ -24,6 +24,7 @@ import {
 
 import {
   apiBaseUrl,
+  applyBlueprintSectionPreview,
   createBlueprint,
   deleteBlueprint,
   getBlueprint,
@@ -110,6 +111,7 @@ const REVISION_STEPS = [
 const GENERATION_FEEDBACK_MIN_MS = 600;
 
 let mermaidLoadPromise = null;
+let mermaidRenderQueue = Promise.resolve();
 
 // 다이어그램 탭이 실제로 열릴 때만 Mermaid를 불러와 초기 번들 크기를 줄입니다.
 function loadMermaid() {
@@ -128,7 +130,7 @@ function loadMermaid() {
   return mermaidLoadPromise;
 }
 
-function MermaidDiagram({ source }) {
+function MermaidDiagram({ label, source }) {
   const [svg, setSvg] = useState("");
   const [error, setError] = useState("");
   const [view, setView] = useState("diagram");
@@ -139,26 +141,31 @@ function MermaidDiagram({ source }) {
     const id = `diagram-${crypto.randomUUID()}`;
 
     setError(null);
+    setSvg("");
 
-    loadMermaid()
-      .then((mermaid) => mermaid.render(id, renderSource))
+    enqueueMermaidRender(id, renderSource)
       .then((result) => {
         if (mounted) {
-          setSvg(result.svg);
-          setError("");
+          if (isMermaidErrorSvg(result.svg)) {
+            setSvg("");
+            setError(`${label} 문법 오류가 있어 렌더링하지 못했습니다. Code 탭에서 원본을 확인해 주세요.`);
+          } else {
+            setSvg(result.svg);
+            setError("");
+          }
         }
       })
       .catch((err) => {
         if (mounted) {
           setSvg("");
-          setError(String(err));
+          setError(`${label} 문법 오류가 있어 렌더링하지 못했습니다. Code 탭에서 원본을 확인해 주세요.\n${formatMermaidError(err)}`);
         }
       });
 
     return () => {
       mounted = false;
     };
-  }, [renderSource]);
+  }, [label, renderSource]);
 
   return (
     <div className="diagram-panel">
@@ -179,6 +186,31 @@ function MermaidDiagram({ source }) {
       )}
     </div>
   );
+}
+
+// Mermaid 싱글턴 렌더러가 동시 호출 중 실패 상태를 공유하지 않도록 요청을 순차 처리합니다.
+function enqueueMermaidRender(id, source) {
+  const renderTask = () => renderMermaidDiagram(id, source);
+  const queuedRender = mermaidRenderQueue.then(renderTask, renderTask);
+  mermaidRenderQueue = queuedRender.catch(() => undefined);
+  return queuedRender;
+}
+
+// Mermaid 렌더링을 실행하고 결과 SVG가 명시적인 오류 화면인지 후처리에서 확인합니다.
+async function renderMermaidDiagram(id, source) {
+  const mermaid = await loadMermaid();
+  return mermaid.render(id, source);
+}
+
+// Mermaid가 syntax error SVG를 정상 결과처럼 반환하는 경우를 화면 주입 전에 차단합니다.
+function isMermaidErrorSvg(svg) {
+  return svg.includes("Syntax error in text");
+}
+
+// Mermaid 원본 오류가 너무 길게 나오지 않도록 첫 줄만 안내에 붙입니다.
+function formatMermaidError(error) {
+  const message = String(error || "").split("\n").find(Boolean) || "Mermaid parse error";
+  return message.length > 180 ? `${message.slice(0, 180)}...` : message;
 }
 
 function Section({ title, description, children }) {
@@ -371,6 +403,8 @@ function App() {
   // 설계 보조 챗 위젯의 열림/닫힘 상태를 관리합니다.
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [isRegeneratingSection, setIsRegeneratingSection] = useState(false);
+  // 섹션 재생성 미리보기를 새 저장본으로 적용하는 동안 버튼 중복 클릭을 막습니다.
+  const [isApplyingSectionPreview, setIsApplyingSectionPreview] = useState(false);
   const [sectionPreview, setSectionPreview] = useState(null);
   const [isShowingSectionPreview, setIsShowingSectionPreview] = useState(false);
   const [regenerationNotice, setRegenerationNotice] = useState("");
@@ -550,14 +584,17 @@ function App() {
 
     try {
       const preview = await regenerateBlueprintSection(selectedBlueprintId, section, instruction?.trim() || undefined);
-      const normalizedPreview = normalizeSectionPreview(preview, section, instruction?.trim() || "");
+      const normalizedPreview = {
+        ...normalizeSectionPreview(preview, section, instruction?.trim() || ""),
+        instruction: instruction?.trim() || "",
+      };
       const changeCount = blueprint ? getSectionChangeCount(blueprint, normalizedPreview.result, normalizedPreview.section) : 0;
       setSectionPreview(normalizedPreview);
       setIsShowingSectionPreview(true);
       if (changeCount === 0) {
         setRegenerationNotice("재생성 결과가 원본과 거의 같습니다. 더 구체적인 요청으로 다시 시도해 주세요.");
       } else {
-        setRegenerationNotice(`재생성 미리보기에 변경 항목 ${changeCount}개가 반영됐습니다.`);
+        setRegenerationNotice(getSectionChangeNotice(blueprint, normalizedPreview.result, normalizedPreview.section));
       }
       setActiveResultTab(section === "planning" ? "plan" : section);
       scrollToSection("result");
@@ -565,6 +602,37 @@ function App() {
       setRegenerationNotice(`재생성 실패: ${toUserError(err).message}`);
     } finally {
       setIsRegeneratingSection(false);
+    }
+  }
+
+  async function handleApplySectionPreview() {
+    if (!selectedBlueprintId || !sectionPreview || isApplyingSectionPreview) {
+      return;
+    }
+
+    setIsApplyingSectionPreview(true);
+    setError(null);
+    setRegenerationNotice("");
+
+    try {
+      const applied = await applyBlueprintSectionPreview(
+        selectedBlueprintId,
+        sectionPreview.section,
+        sectionPreview.result,
+        sectionPreview.instruction || "",
+      );
+      setBlueprint(applied.result);
+      setIdea(getBaseIdea(applied.idea));
+      setSelectedBlueprintId(applied.id);
+      setSectionPreview(null);
+      setIsShowingSectionPreview(false);
+      setRegenerationNotice("미리보기를 새 개선안으로 저장했습니다.");
+      await refreshRecent();
+      scrollToSection("result");
+    } catch (err) {
+      setRegenerationNotice(`미리보기 적용 실패: ${toUserError(err).message}`);
+    } finally {
+      setIsApplyingSectionPreview(false);
     }
   }
 
@@ -794,10 +862,12 @@ function App() {
               <BlueprintView
                 activeTab={activeResultTab}
                 blueprint={displayedBlueprint}
-                canRegenerate={Boolean(selectedBlueprintId) && !isRevising}
+                canRegenerate={Boolean(selectedBlueprintId) && !isRevising && !isApplyingSectionPreview}
                 hasPreview={Boolean(sectionPreview)}
+                isApplyingSectionPreview={isApplyingSectionPreview}
                 isPreviewVisible={Boolean(isShowingSectionPreview && sectionPreview)}
                 isRegeneratingSection={isRegeneratingSection}
+                onApplySectionPreview={handleApplySectionPreview}
                 onRegenerateSection={handleRegenerateSection}
                 onTogglePreview={() => setIsShowingSectionPreview((current) => !current)}
                 previewChangeCount={previewChangeCount}
@@ -901,8 +971,10 @@ function BlueprintView({
   blueprint,
   canRegenerate,
   hasPreview,
+  isApplyingSectionPreview,
   isPreviewVisible,
   isRegeneratingSection,
+  onApplySectionPreview,
   onRegenerateSection,
   onTogglePreview,
   previewChangeCount,
@@ -942,6 +1014,17 @@ function BlueprintView({
             </p>
           </div>
           <div className="section-regeneration-actions">
+            {isPreviewVisible && previewChangeCount > 0 && (
+              <button
+                className="primary-button"
+                disabled={isApplyingSectionPreview}
+                onClick={onApplySectionPreview}
+                type="button"
+              >
+                {isApplyingSectionPreview ? <Loader2 className="spin" size={16} /> : <CheckCircle2 size={16} />}
+                {isApplyingSectionPreview ? "적용 중" : "미리보기 적용"}
+              </button>
+            )}
             {hasPreview && (
               <button className="secondary-button" type="button" onClick={onTogglePreview}>
                 {isPreviewVisible ? <X size={16} /> : <CheckCircle2 size={16} />}
@@ -1051,11 +1134,11 @@ function BlueprintView({
         {activeTab === "diagrams" && (
           <div className="diagram-grid">
             <Section title="데이터베이스 ERD" description="테이블 간 관계를 Mermaid ERD로 표현합니다.">
-              <MermaidDiagram source={blueprint.database_erd} />
+              <MermaidDiagram label="ERD 다이어그램" source={blueprint.database_erd} />
             </Section>
 
             <Section title="시퀀스 다이어그램" description="사용자 요청이 처리되는 주요 흐름입니다.">
-              <MermaidDiagram source={blueprint.sequence_diagram} />
+              <MermaidDiagram label="시퀀스 다이어그램" source={blueprint.sequence_diagram} />
             </Section>
           </div>
         )}
@@ -1124,6 +1207,10 @@ function buildQualityItems(blueprint) {
 }
 
 function getSectionChangeCount(originalBlueprint, previewBlueprint, section) {
+  if (section === "diagrams") {
+    return getChangedDiagramLabels(originalBlueprint, previewBlueprint).length;
+  }
+
   const originalItems = getComparableSectionItems(originalBlueprint, section);
   const previewItems = getComparableSectionItems(previewBlueprint, section);
   const maxLength = Math.max(originalItems.length, previewItems.length);
@@ -1136,6 +1223,34 @@ function getSectionChangeCount(originalBlueprint, previewBlueprint, section) {
   }
 
   return changeCount;
+}
+
+// 섹션별 변경 수를 사용자가 보는 단위에 맞춰 설명합니다.
+function getSectionChangeNotice(originalBlueprint, previewBlueprint, section) {
+  if (section === "diagrams") {
+    const changedLabels = getChangedDiagramLabels(originalBlueprint, previewBlueprint);
+    return `다이어그램 미리보기에 ${changedLabels.join(", ")} ${changedLabels.length}개가 반영됐습니다.`;
+  }
+
+  const changeCount = getSectionChangeCount(originalBlueprint, previewBlueprint, section);
+  return `재생성 미리보기에 변경 항목 ${changeCount}개가 반영됐습니다.`;
+}
+
+// Mermaid 문자열의 공백/쉼표 보정 차이는 제외하고 실제 다이어그램 내용 변경만 셉니다.
+function getChangedDiagramLabels(originalBlueprint, previewBlueprint) {
+  const diagramPairs = [
+    ["ERD", originalBlueprint?.database_erd || "", previewBlueprint?.database_erd || ""],
+    ["시퀀스", originalBlueprint?.sequence_diagram || "", previewBlueprint?.sequence_diagram || ""],
+  ];
+
+  return diagramPairs
+    .filter(([, originalSource, previewSource]) => normalizeDiagramText(originalSource) !== normalizeDiagramText(previewSource))
+    .map(([label]) => label);
+}
+
+// Mermaid 렌더링 보정 후 공백을 제거해 화면상 의미 있는 변경만 비교합니다.
+function normalizeDiagramText(source) {
+  return normalizeMermaidSource(source).replace(/\s+/g, "").trim();
 }
 
 function getComparableSectionItems(blueprint, section) {

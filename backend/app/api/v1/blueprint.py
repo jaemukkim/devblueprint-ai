@@ -6,6 +6,7 @@ from app.schemas.blueprint import (
     BlueprintRequest,
     BlueprintRevisionRequest,
     BlueprintResponse,
+    BlueprintSectionApplyRequest,
     BlueprintSectionRegenerationRequest,
     BlueprintSectionRegenerationResponse,
     BlueprintSummary,
@@ -14,6 +15,7 @@ from app.schemas.blueprint import (
 from app.services.llm_client import BlueprintGenerationError
 from app.services.blueprint_generator import (
     DuplicateBlueprintRevisionError,
+    apply_blueprint_section_preview,
     generate_blueprint,
     normalize_section_name,
     regenerate_blueprint_section,
@@ -116,6 +118,42 @@ def regenerate_stored_blueprint_section(
     return BlueprintSectionRegenerationResponse(
         section=normalize_section_name(section),
         result=regenerated_blueprint,
+    )
+
+
+@blueprints_router.post(
+    "/{blueprint_id}/sections/{section}/apply",
+    response_model=StoredBlueprintResponse,
+)
+def apply_stored_blueprint_section_preview(
+    blueprint_id: str,
+    section: str,
+    payload: BlueprintSectionApplyRequest,
+) -> StoredBlueprintResponse:
+    stored_blueprint = blueprint_repository.get_by_id(blueprint_id)
+
+    if stored_blueprint is None:
+        raise build_not_found_error("적용할 설계도를 찾을 수 없습니다.")
+
+    try:
+        applied_blueprint = apply_blueprint_section_preview(
+            stored_blueprint.idea,
+            section,
+            payload.result,
+            payload.instruction,
+        )
+    except ValueError as exc:
+        raise build_not_found_error(str(exc), "unsupported_section") from exc
+    except BlueprintGenerationError as exc:
+        # 클라이언트가 보낸 미리보기라도 저장 전 전체 품질 검증을 다시 통과해야 합니다.
+        raise build_generation_http_error(exc) from exc
+
+    return StoredBlueprintResponse(
+        id=applied_blueprint.id,
+        idea=applied_blueprint.idea,
+        revision_instruction=applied_blueprint.revision_instruction,
+        created_at=applied_blueprint.created_at,
+        result=applied_blueprint.result,
     )
 
 
