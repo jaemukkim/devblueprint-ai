@@ -1,9 +1,11 @@
 from fastapi.testclient import TestClient
 
 from app.core.config import settings
+from app.api.v1 import blueprint as blueprint_api
 from app.main import app
 from app.repositories.blueprint_repository import blueprint_repository
 from app.schemas.blueprint import BlueprintResponse
+from app.services.llm_client import BlueprintGenerationError
 
 
 client = TestClient(app)
@@ -81,6 +83,43 @@ def test_generate_blueprint_rejects_short_idea() -> None:
     response = client.post("/api/v1/blueprint/generate", json={"idea": "abc"})
 
     assert response.status_code == 422
+
+
+def test_generate_blueprint_returns_structured_openai_error(monkeypatch) -> None:
+    # 생성 실패 응답은 프론트가 원인을 구분할 수 있도록 error_code와 hint를 포함합니다.
+    def raise_openai_error(_payload):
+        raise BlueprintGenerationError("OpenAI API 호출 중 오류가 발생했습니다.")
+
+    monkeypatch.setattr(blueprint_api, "generate_blueprint", raise_openai_error)
+
+    response = client.post(
+        "/api/v1/blueprint/generate",
+        json={"idea": "구조화된 오류 응답을 확인하는 테스트 서비스"},
+    )
+
+    assert response.status_code == 503
+    detail = response.json()["detail"]
+    assert detail["error_code"] == "openai_call_failed"
+    assert detail["message"] == "OpenAI API 호출 중 오류가 발생했습니다."
+    assert detail["hint"]
+
+
+def test_generate_blueprint_returns_structured_validation_error(monkeypatch) -> None:
+    # 품질 검증 실패도 별도 error_code로 내려 UI가 재시도 안내를 다르게 보여줄 수 있게 합니다.
+    def raise_validation_error(_payload):
+        raise BlueprintGenerationError("설계도 품질 검증에 실패했습니다: database_erd must start with 'erDiagram'")
+
+    monkeypatch.setattr(blueprint_api, "generate_blueprint", raise_validation_error)
+
+    response = client.post(
+        "/api/v1/blueprint/generate",
+        json={"idea": "검증 실패 응답을 확인하는 테스트 서비스"},
+    )
+
+    assert response.status_code == 503
+    detail = response.json()["detail"]
+    assert detail["error_code"] == "blueprint_validation_failed"
+    assert "품질 기준" in detail["hint"]
 
 
 def test_generate_blueprint_reuses_cached_result(monkeypatch) -> None:

@@ -265,12 +265,17 @@ function toUserError(error) {
   const statusText = error?.status ? `status=${error.status}` : "";
   const message = error?.message || "알 수 없는 오류가 발생했습니다.";
   const errorCopy = ERROR_COPY_BY_TYPE[type] || ERROR_COPY_BY_TYPE.request;
+  const hint = error?.hint || "";
+  const errorCode = error?.errorCode || "";
+  const detailParts = [statusText, errorCode].filter(Boolean);
 
   return {
     type,
     title: errorCopy.title,
-    message: errorCopy.message(message),
-    detail: statusText,
+    message: errorCopy.message(message, hint),
+    detail: detailParts.join(" · "),
+    hint,
+    errorCode,
   };
 }
 
@@ -281,11 +286,11 @@ const ERROR_COPY_BY_TYPE = {
   },
   openai: {
     title: "OpenAI 호출 실패",
-    message: () => "OpenAI 연결, API key, 모델 권한 또는 네트워크 설정을 확인해 주세요.",
+    message: (message, hint) => hint || message || "OpenAI 연결, API key, 모델 권한 또는 네트워크 설정을 확인해 주세요.",
   },
   validation: {
     title: "설계도 품질 검증 실패",
-    message: (message) => `생성 결과가 품질 기준을 통과하지 못했습니다. ${message}`,
+    message: (message, hint) => hint || `생성 결과가 품질 기준을 통과하지 못했습니다. ${message}`,
   },
   duplicate: {
     title: "중복 요청",
@@ -823,6 +828,7 @@ function ErrorNotice({ error }) {
     <div className={`error-notice ${error.type || "request"}`} role="alert">
       <strong>{error.title}</strong>
       <p>{error.message}</p>
+      {error.hint && error.hint !== error.message && <p>{error.hint}</p>}
       {error.detail && <small>{error.detail}</small>}
     </div>
   );

@@ -32,8 +32,14 @@ async function requestJson(path, options = {}) {
   const body = await response.json().catch(() => ({}));
 
   if (!response.ok) {
-    const message = body.detail || `API 요청에 실패했습니다. status=${response.status}`;
-    throw createRequestError(message, classifyApiError(response.status, message), response.status);
+    const errorDetail = normalizeErrorDetail(body.detail, response.status);
+    throw createRequestError(
+      errorDetail.message,
+      classifyApiError(response.status, errorDetail),
+      response.status,
+      null,
+      errorDetail,
+    );
   }
 
   return body;
@@ -82,12 +88,15 @@ export function deleteBlueprint(id) {
   });
 }
 
-// 서버 응답 문구와 status를 바탕으로 사용자가 이해하기 쉬운 오류 범주를 만듭니다.
-function classifyApiError(status, message) {
-  if (status === 503 && message.includes("OpenAI API")) {
+// 서버의 표준 오류 구조와 status를 바탕으로 사용자가 이해하기 쉬운 오류 범주를 만듭니다.
+function classifyApiError(status, errorDetail) {
+  const code = errorDetail.errorCode || "";
+  const message = errorDetail.message || "";
+
+  if (code.includes("openai")) {
     return "openai";
   }
-  if (status === 503 && message.includes("품질 검증")) {
+  if (code.includes("validation") || (status === 503 && message.includes("품질 검증"))) {
     return "validation";
   }
   if (status >= 500) {
@@ -102,11 +111,33 @@ function classifyApiError(status, message) {
   return "request";
 }
 
+// 이전 문자열 detail과 새 구조화 detail을 같은 형태로 맞춥니다.
+function normalizeErrorDetail(detail, status) {
+  if (detail && typeof detail === "object") {
+    return {
+      message: detail.message || detail.detail || `API 요청에 실패했습니다. status=${status}`,
+      errorCode: detail.error_code || detail.errorCode || "",
+      hint: detail.hint || "",
+      extra: detail.extra || null,
+    };
+  }
+
+  return {
+    message: detail || `API 요청에 실패했습니다. status=${status}`,
+    errorCode: "",
+    hint: "",
+    extra: null,
+  };
+}
+
 // Error 객체에 분류 정보를 붙여 화면에서 상세 안내를 선택할 수 있게 합니다.
-function createRequestError(message, type, status = 0, cause = null) {
+function createRequestError(message, type, status = 0, cause = null, detail = null) {
   const error = new Error(message);
   error.type = type;
   error.status = status;
   error.cause = cause;
+  error.errorCode = detail?.errorCode || "";
+  error.hint = detail?.hint || "";
+  error.extra = detail?.extra || null;
   return error;
 }
