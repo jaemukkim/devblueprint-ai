@@ -690,6 +690,37 @@ textarea:focus {
   color: #b42318;
 }
 
+.error-notice {
+  display: grid;
+  gap: 5px;
+  margin-top: 14px;
+  border: 1px solid rgba(248, 113, 113, 0.42);
+  border-radius: 10px;
+  background: rgba(127, 29, 29, 0.18);
+  padding: 12px;
+  color: #fee2e2;
+}
+
+.error-notice strong {
+  color: #fecaca;
+  font-size: 13px;
+}
+
+.error-notice p,
+.error-notice small {
+  margin: 0;
+  line-height: 1.5;
+}
+
+.error-notice p {
+  font-size: 13px;
+}
+
+.error-notice small {
+  color: #fca5a5;
+  font-size: 11px;
+}
+
 .empty-state {
   display: grid;
   place-items: center;
@@ -791,6 +822,55 @@ textarea:focus {
   border-color: rgba(24, 214, 163, 0.42);
   background: rgba(24, 214, 163, 0.14);
   color: #b7f7e6;
+}
+
+.dev-status-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) repeat(3, minmax(70px, 0.7fr)) 34px;
+  gap: 8px;
+  align-items: stretch;
+  margin-top: 18px;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.28);
+  padding: 10px;
+}
+
+.dev-status-panel div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.dev-status-panel span {
+  color: #8fa4c2;
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.dev-status-panel strong {
+  overflow: hidden;
+  color: #dbeafe;
+  font-size: 12px;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dev-status-panel button {
+  align-self: center;
+  justify-self: end;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+}
+
+.dev-status-panel p {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: #fca5a5;
+  font-size: 12px;
 }
 
 .app-board {
@@ -2007,6 +2087,14 @@ th {
 
   .generation-steps {
     grid-template-columns: 1fr;
+  }
+
+  .dev-status-panel {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .dev-status-panel button {
+    justify-self: start;
   }
 
   .summary-metrics {

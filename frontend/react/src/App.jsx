@@ -23,9 +23,11 @@ import {
 } from "lucide-react";
 
 import {
+  apiBaseUrl,
   createBlueprint,
   deleteBlueprint,
   getBlueprint,
+  getHealth,
   listBlueprints,
   regenerateBlueprintSection,
   reviseBlueprint,
@@ -89,10 +91,10 @@ const DEFAULT_REGENERATION_INSTRUCTIONS = {
 // 생성 대기 화면에서 순차적으로 보여줄 작업 단계입니다.
 const GENERATION_STEPS = [
   "아이디어 분석",
-  "기능 요구사항 정리",
-  "API 초안 구성",
-  "DB/ERD 설계",
-  "시퀀스 정리",
+  "기능/기술 스택 설계",
+  "API 설계",
+  "DB 스키마 설계",
+  "다이어그램/구현 계획 정리",
 ];
 
 // 네트워크가 즉시 실패해도 사용자가 클릭 피드백을 인지할 수 있는 최소 표시 시간입니다.
@@ -147,7 +149,7 @@ function MermaidDiagram({ source }) {
     let mounted = true;
     const id = `diagram-${crypto.randomUUID()}`;
 
-    setError("");
+    setError(null);
 
     loadMermaid()
       .then((mermaid) => mermaid.render(id, renderSource))
@@ -259,6 +261,61 @@ function buildRecentBlueprintItems(items) {
   });
 }
 
+function toUserError(error) {
+  // 사용자에게 보여줄 오류 제목과 조치 문구를 표준화합니다.
+  if (typeof error === "string") {
+    return {
+      type: "request",
+      title: "요청을 확인해 주세요",
+      message: error,
+      detail: "",
+    };
+  }
+
+  const type = error?.type || "request";
+  const statusText = error?.status ? `status=${error.status}` : "";
+  const message = error?.message || "알 수 없는 오류가 발생했습니다.";
+  const errorCopy = ERROR_COPY_BY_TYPE[type] || ERROR_COPY_BY_TYPE.request;
+
+  return {
+    type,
+    title: errorCopy.title,
+    message: errorCopy.message(message),
+    detail: statusText,
+  };
+}
+
+const ERROR_COPY_BY_TYPE = {
+  network: {
+    title: "API 서버 연결 실패",
+    message: (message) => `${message} 현재 API 주소는 ${apiBaseUrl}입니다.`,
+  },
+  openai: {
+    title: "OpenAI 호출 실패",
+    message: () => "OpenAI 연결, API key, 모델 권한 또는 네트워크 설정을 확인해 주세요.",
+  },
+  validation: {
+    title: "설계도 품질 검증 실패",
+    message: (message) => `생성 결과가 품질 기준을 통과하지 못했습니다. ${message}`,
+  },
+  duplicate: {
+    title: "중복 요청",
+    message: (message) => message,
+  },
+  not_found: {
+    title: "데이터를 찾을 수 없음",
+    message: (message) => message,
+  },
+  server: {
+    title: "백엔드 처리 실패",
+    message: (message) => message,
+  },
+  request: {
+    title: "요청 실패",
+    message: (message) => message,
+  },
+};
+
 // 카드가 길어지지 않도록 수정 요청 원문을 짧은 한 줄 요약으로 줄입니다.
 function summarizeRevisionInstruction(instruction) {
   if (!instruction) {
@@ -323,7 +380,13 @@ function App() {
   const [sectionPreview, setSectionPreview] = useState(null);
   const [isShowingSectionPreview, setIsShowingSectionPreview] = useState(false);
   const [regenerationNotice, setRegenerationNotice] = useState("");
-  const [error, setError] = useState("");
+  const [error, setError] = useState(null);
+  // 개발 중 현재 연결된 API 서버와 백엔드 모드를 빠르게 확인하기 위한 상태입니다.
+  const [environmentStatus, setEnvironmentStatus] = useState({
+    loading: true,
+    error: "",
+    health: null,
+  });
 
   const canGenerate = idea.trim().length >= 5 && !loading;
   const displayedBlueprint = isShowingSectionPreview && sectionPreview ? sectionPreview.result : blueprint;
@@ -351,8 +414,28 @@ function App() {
     return items;
   }
 
+  // health endpoint를 호출해 개발 환경 상태 패널에 표시할 값을 갱신합니다.
+  async function refreshEnvironmentStatus() {
+    setEnvironmentStatus((current) => ({ ...current, loading: true, error: "" }));
+
+    try {
+      const health = await getHealth();
+      setEnvironmentStatus({ loading: false, error: "", health });
+    } catch (err) {
+      setEnvironmentStatus({
+        loading: false,
+        error: toUserError(err).message,
+        health: null,
+      });
+    }
+  }
+
   useEffect(() => {
-    refreshRecent().catch((err) => setError(err.message));
+    refreshRecent().catch((err) => setError(toUserError(err)));
+  }, []);
+
+  useEffect(() => {
+    refreshEnvironmentStatus();
   }, []);
 
   useEffect(() => {
@@ -378,7 +461,7 @@ function App() {
     setLoading(true);
     setIsGenerating(true);
     setGenerationStepIndex(0);
-    setError("");
+    setError(null);
     setSectionPreview(null);
     setIsShowingSectionPreview(false);
     setRegenerationNotice("");
@@ -392,7 +475,7 @@ function App() {
       const savedBlueprint = items.find((item) => item.idea.trim() === idea.trim());
       setSelectedBlueprintId(savedBlueprint?.id || null);
     } catch (err) {
-      setError(err.message);
+      setError(toUserError(err));
     } finally {
       await wait(getRemainingFeedbackMs(startedAt));
       setLoading(false);
@@ -402,7 +485,7 @@ function App() {
 
   async function handleOpen(id) {
     setLoading(true);
-    setError("");
+    setError(null);
     setSectionPreview(null);
     setIsShowingSectionPreview(false);
     setRegenerationNotice("");
@@ -414,7 +497,7 @@ function App() {
       setSelectedBlueprintId(stored.id);
       setActiveResultTab("summary");
     } catch (err) {
-      setError(err.message);
+      setError(toUserError(err));
     } finally {
       setLoading(false);
     }
@@ -425,7 +508,7 @@ function App() {
       return;
     }
 
-    setError("");
+    setError(null);
 
     try {
       await deleteBlueprint(id);
@@ -438,7 +521,7 @@ function App() {
       }
       await refreshRecent();
     } catch (err) {
-      setError(err.message);
+      setError(toUserError(err));
     }
   }
 
@@ -463,12 +546,12 @@ function App() {
     }
 
     if (instruction.trim().length > 0 && instruction.trim().length < 5) {
-      setError("재생성 요청은 5자 이상 입력해 주세요.");
+      setError(toUserError("재생성 요청은 5자 이상 입력해 주세요."));
       return;
     }
 
     setIsRegeneratingSection(true);
-    setError("");
+    setError(null);
     setRegenerationNotice("");
 
     try {
@@ -485,7 +568,7 @@ function App() {
       setActiveResultTab(section === "planning" ? "plan" : section);
       scrollToSection("result");
     } catch (err) {
-      setRegenerationNotice(`재생성 실패: ${err.message}`);
+      setRegenerationNotice(`재생성 실패: ${toUserError(err).message}`);
     } finally {
       setIsRegeneratingSection(false);
     }
@@ -497,7 +580,7 @@ function App() {
     }
 
     setIsRevising(true);
-    setError("");
+    setError(null);
     setSectionPreview(null);
     setIsShowingSectionPreview(false);
     setRegenerationNotice("");
@@ -511,7 +594,7 @@ function App() {
       await refreshRecent();
       scrollToSection("result");
     } catch (err) {
-      setError(err.message);
+      setError(toUserError(err));
       throw err;
     } finally {
       setIsRevising(false);
@@ -629,17 +712,23 @@ function App() {
                 <Info size={15} />
                 {isGenerating ? GENERATION_STEPS[generationStepIndex] : "구체적일수록 더 정확한 설계도가 생성돼요"}
               </p>
-              {error && <p className="error-text">{error}</p>}
+              {error && <ErrorNotice error={error} />}
             </div>
 
             {isGenerating ? <GenerationStatus activeStepIndex={generationStepIndex} /> : (
               <div className="generation-preview">
-                <span>핵심 기능 5개 도출</span>
-                <span>REST API endpoint 설계</span>
-                <span>ERD 및 DB 구조 생성</span>
-                <span>시퀀스 다이어그램 정리</span>
+                <span>아이디어 분석</span>
+                <span>기능/기술 스택 설계</span>
+                <span>API와 DB 스키마 구성</span>
+                <span>다이어그램/구현 계획 정리</span>
               </div>
             )}
+
+            <DevEnvironmentStatus
+              apiBaseUrl={apiBaseUrl}
+              environmentStatus={environmentStatus}
+              onRefresh={refreshEnvironmentStatus}
+            />
           </section>
         </section>
 
@@ -735,6 +824,52 @@ function App() {
         onRevise={handleReviseBlueprint}
         onToggle={() => setIsChatOpen((current) => !current)}
       />
+    </div>
+  );
+}
+
+// API 오류 유형별로 사용자가 바로 이해할 수 있는 안내를 표시합니다.
+function ErrorNotice({ error }) {
+  return (
+    <div className={`error-notice ${error.type || "request"}`} role="alert">
+      <strong>{error.title}</strong>
+      <p>{error.message}</p>
+      {error.detail && <small>{error.detail}</small>}
+    </div>
+  );
+}
+
+// 로컬 개발 중 프론트가 바라보는 API와 백엔드 health 상태를 요약합니다.
+function DevEnvironmentStatus({ apiBaseUrl, environmentStatus, onRefresh }) {
+  const health = environmentStatus.health;
+  const statusLabel = environmentStatus.loading
+    ? "확인 중"
+    : environmentStatus.error
+      ? "연결 실패"
+      : "연결됨";
+
+  return (
+    <div className="dev-status-panel" aria-label="개발 환경 상태">
+      <div>
+        <span>API</span>
+        <strong>{apiBaseUrl}</strong>
+      </div>
+      <div>
+        <span>Backend</span>
+        <strong>{statusLabel}</strong>
+      </div>
+      <div>
+        <span>OpenAI</span>
+        <strong>{health ? (health.use_openai ? "ON" : "OFF") : "-"}</strong>
+      </div>
+      <div>
+        <span>Storage</span>
+        <strong>{health?.repository_backend || "-"}</strong>
+      </div>
+      <button type="button" onClick={onRefresh} aria-label="개발 환경 상태 새로고침">
+        <RefreshCw size={14} />
+      </button>
+      {environmentStatus.error && <p>{environmentStatus.error}</p>}
     </div>
   );
 }

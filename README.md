@@ -65,8 +65,8 @@ OPENAI_MODEL=gpt-4.1-mini
 USE_OPENAI=false
 
 # API / 프론트엔드 설정
-API_BASE_URL=http://localhost:8000
-FRONTEND_ORIGINS=http://localhost:8501,http://localhost:8502,http://localhost:5173
+API_BASE_URL=http://localhost:8010
+FRONTEND_ORIGINS=http://localhost:8501,http://localhost:8502,http://localhost:5173,http://127.0.0.1:5173
 
 # 저장소 설정
 REPOSITORY_BACKEND=memory
@@ -101,6 +101,8 @@ python -m pip install -r requirements.txt
 docker compose up -d db
 ```
 
+로컬 개발에서는 Docker로 PostgreSQL만 실행하고, FastAPI는 호스트에서 `8010` 포트로 실행하는 방식을 권장합니다. Docker API 컨테이너가 `8000` 포트를 점유하거나 이전 서버 프로세스가 남아 있어도 React가 안정적으로 같은 백엔드를 보게 하기 위해서입니다.
+
 PostgreSQL 저장소를 사용할 경우 `.env`에서 아래 값을 실제 Docker DB 계정에 맞춥니다.
 
 ```env
@@ -117,19 +119,21 @@ python -m alembic upgrade head
 ### 3. FastAPI 실행
 
 ```powershell
-python -m uvicorn app.main:app --app-dir backend --reload
+python -m uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8010
 ```
 
-기본 주소:
+권장 로컬 주소:
 
 ```text
-http://localhost:8000
+http://localhost:8010
 ```
 
-`8000` 포트가 막혀 있으면 `8001`로 실행합니다.
+코드를 수정한 뒤에는 실행 중인 FastAPI 터미널에서 `Ctrl + C`로 종료하고 다시 실행합니다. Docker Desktop이나 PostgreSQL 컨테이너는 종료하지 않아도 됩니다.
+
+`8010` 포트가 막혀 있으면 다른 포트로 실행합니다.
 
 ```powershell
-python -m uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8001 --reload
+python -m uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8011
 ```
 
 이 경우 React의 API 주소도 같이 바꿔야 합니다.
@@ -148,19 +152,19 @@ npm run dev
 http://localhost:5173
 ```
 
-FastAPI를 `8001`로 실행하는 경우 `frontend/react/.env.local`을 만들고 아래 값을 넣습니다.
+React 개발 서버는 `frontend/react/.env` 또는 `frontend/react/.env.local`의 API 주소를 사용합니다. 로컬 권장값은 아래와 같습니다.
 
 ```env
-VITE_API_BASE_URL=http://localhost:8001
+VITE_API_BASE_URL=http://localhost:8010
 ```
 
-FastAPI가 `8000`이면 보통 `.env.local` 없이 기본값으로 실행해도 됩니다.
+FastAPI 포트를 바꾸면 이 값도 같은 포트로 바꾼 뒤 React 개발 서버를 재시작합니다.
 
 ## 포트 정리
 
 ```text
 React:      http://localhost:5173
-FastAPI:    http://localhost:8000
+FastAPI:    http://localhost:8010
 PostgreSQL: localhost:5432
 Streamlit:  http://localhost:8501 또는 8502
 ```
