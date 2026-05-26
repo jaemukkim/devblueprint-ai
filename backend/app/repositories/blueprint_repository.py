@@ -12,6 +12,7 @@ from app.core.config import settings
 from app.db.session import SessionLocal
 from app.models.blueprint import BlueprintModel
 from app.schemas.blueprint import BlueprintResponse
+from app.services.blueprint_normalizer import normalize_blueprint_output
 
 
 @dataclass
@@ -77,13 +78,13 @@ class InMemoryBlueprintRepository(BlueprintRepository):
         stored_blueprint = self._items.get(key)
         if stored_blueprint is None:
             return None
-        return deepcopy(stored_blueprint.result)
+        return normalize_blueprint_output(deepcopy(stored_blueprint.result))
 
     def get_stored_by_key(self, key: str) -> StoredBlueprint | None:
         stored_blueprint = self._items.get(key)
         if stored_blueprint is None:
             return None
-        return deepcopy(stored_blueprint)
+        return normalize_stored_blueprint(stored_blueprint)
 
     def save(
         self,
@@ -113,7 +114,7 @@ class InMemoryBlueprintRepository(BlueprintRepository):
     def get_by_id(self, blueprint_id: str) -> StoredBlueprint | None:
         for stored_blueprint in self._items.values():
             if stored_blueprint.id == blueprint_id:
-                return deepcopy(stored_blueprint)
+                return normalize_stored_blueprint(stored_blueprint)
         return None
 
     def list_recent(self, limit: int = 20) -> list[StoredBlueprint]:
@@ -122,7 +123,7 @@ class InMemoryBlueprintRepository(BlueprintRepository):
             key=lambda stored_blueprint: stored_blueprint.created_at,
             reverse=True,
         )
-        return deepcopy(stored_blueprints[:limit])
+        return [normalize_stored_blueprint(stored_blueprint) for stored_blueprint in stored_blueprints[:limit]]
 
     def delete_by_id(self, blueprint_id: str) -> bool:
         for key, stored_blueprint in list(self._items.items()):
@@ -152,7 +153,7 @@ class PostgresBlueprintRepository(BlueprintRepository):
             if blueprint_model is None:
                 return None
 
-            return BlueprintResponse.model_validate(blueprint_model.result)
+            return normalize_blueprint_output(BlueprintResponse.model_validate(blueprint_model.result))
 
     def get_stored_by_key(self, key: str) -> StoredBlueprint | None:
         with self._session_factory() as db:
@@ -241,7 +242,7 @@ class PostgresBlueprintRepository(BlueprintRepository):
             id=blueprint_model.id,
             idea=blueprint_model.idea,
             revision_instruction=blueprint_model.revision_instruction,
-            result=BlueprintResponse.model_validate(blueprint_model.result),
+            result=normalize_blueprint_output(BlueprintResponse.model_validate(blueprint_model.result)),
             created_at=blueprint_model.created_at,
         )
 
@@ -267,6 +268,13 @@ def is_valid_uuid(value: str) -> bool:
         return False
 
     return True
+
+
+def normalize_stored_blueprint(stored_blueprint: StoredBlueprint) -> StoredBlueprint:
+    """저장된 원본은 그대로 두고 API로 반환하는 설계도 결과만 최신 문법으로 정규화합니다."""
+    normalized_stored_blueprint = deepcopy(stored_blueprint)
+    normalized_stored_blueprint.result = normalize_blueprint_output(normalized_stored_blueprint.result)
+    return normalized_stored_blueprint
 
 
 blueprint_repository: BlueprintRepository = create_blueprint_repository()

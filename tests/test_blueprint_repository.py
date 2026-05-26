@@ -109,6 +109,32 @@ def test_in_memory_blueprint_repository_saves_and_gets_copy() -> None:
     assert repository.count() == 1
 
 
+def test_in_memory_blueprint_repository_normalizes_legacy_mermaid_on_read() -> None:
+    repository = InMemoryBlueprintRepository()
+    blueprint = make_repository_test_blueprint()
+    blueprint.database_erd = (
+        "```mermaid\n"
+        "erDiagram\n"
+        "  test_items {\n"
+        "    uuid owner_id PK FK\n"
+        "    timestamp with time zone created_at\n"
+        "  }\n"
+        "```\n"
+    )
+
+    repository.save("legacy-key", blueprint)
+    cached_blueprint = repository.get("legacy-key")
+    stored_blueprint = repository.get_stored_by_key("legacy-key")
+
+    assert cached_blueprint is not None
+    assert stored_blueprint is not None
+    assert cached_blueprint.database_erd.startswith("erDiagram")
+    assert "uuid owner_id PK, FK" in cached_blueprint.database_erd
+    assert "timestamp_with_time_zone created_at" in cached_blueprint.database_erd
+    assert stored_blueprint.result.database_erd == cached_blueprint.database_erd
+    assert repository._items["legacy-key"].result.database_erd.startswith("```mermaid")
+
+
 def test_in_memory_blueprint_repository_clear_removes_items() -> None:
     repository = InMemoryBlueprintRepository()
     repository.save("test-key", make_repository_test_blueprint())
