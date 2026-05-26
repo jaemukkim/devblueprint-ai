@@ -1901,8 +1901,35 @@ th {
 .diagram-error {
   overflow-x: auto;
   color: #b42318;
-  white-space: pre-wrap;
   padding: 14px;
+}
+
+.diagram-error strong {
+  display: block;
+  margin-bottom: 6px;
+}
+
+.diagram-error p,
+.diagram-error small {
+  display: block;
+  margin: 0;
+}
+
+.diagram-error code {
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  margin: 10px 0;
+  padding: 8px 10px;
+  border: 1px solid #f3b4ad;
+  border-radius: 6px;
+  background: #fff4f2;
+  color: #8a1f14;
+  white-space: pre-wrap;
+}
+
+.diagram-error small {
+  color: #9a3412;
 }
 
 .diagram-panel {

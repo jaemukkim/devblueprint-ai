@@ -132,7 +132,7 @@ function loadMermaid() {
 
 function MermaidDiagram({ label, source }) {
   const [svg, setSvg] = useState("");
-  const [error, setError] = useState("");
+  const [error, setError] = useState(null);
   const [view, setView] = useState("diagram");
   const renderSource = useMemo(() => normalizeMermaidSource(source), [source]);
 
@@ -148,17 +148,17 @@ function MermaidDiagram({ label, source }) {
         if (mounted) {
           if (isMermaidErrorSvg(result.svg)) {
             setSvg("");
-            setError(`${label} 문법 오류가 있어 렌더링하지 못했습니다. Code 탭에서 원본을 확인해 주세요.`);
+            setError(buildMermaidErrorInfo(label, null, renderSource));
           } else {
             setSvg(result.svg);
-            setError("");
+            setError(null);
           }
         }
       })
       .catch((err) => {
         if (mounted) {
           setSvg("");
-          setError(`${label} 문법 오류가 있어 렌더링하지 못했습니다. Code 탭에서 원본을 확인해 주세요.\n${formatMermaidError(err)}`);
+          setError(buildMermaidErrorInfo(label, err, renderSource));
         }
       });
 
@@ -180,10 +180,26 @@ function MermaidDiagram({ label, source }) {
       {view === "code" ? (
         <pre className="code-block">{renderSource}</pre>
       ) : error ? (
-        <pre className="diagram-error">{error}</pre>
+        <DiagramError error={error} />
       ) : (
         <div className="diagram" dangerouslySetInnerHTML={{ __html: svg }} />
       )}
+    </div>
+  );
+}
+
+// Mermaid 오류를 사용자가 바로 확인할 수 있는 구조로 보여줍니다.
+function DiagramError({ error }) {
+  return (
+    <div className="diagram-error" role="alert">
+      <strong>{error.title}</strong>
+      <p>{error.message}</p>
+      {error.lineNumber && (
+        <code>
+          line {error.lineNumber}: {error.lineText || "(빈 줄)"}
+        </code>
+      )}
+      {error.detail && <small>{error.detail}</small>}
     </div>
   );
 }
@@ -207,10 +223,37 @@ function isMermaidErrorSvg(svg) {
   return svg.includes("Syntax error in text");
 }
 
-// Mermaid 원본 오류가 너무 길게 나오지 않도록 첫 줄만 안내에 붙입니다.
+// Mermaid 오류 객체에서 줄 번호와 원본 줄을 추출해 안내 메시지를 만듭니다.
+function buildMermaidErrorInfo(label, error, source) {
+  const detail = formatMermaidError(error);
+  const lineNumber = extractMermaidErrorLineNumber(detail);
+  const lineText = lineNumber ? source.split("\n")[lineNumber - 1]?.trim() || "" : "";
+
+  return {
+    title: `${label} 문법 오류`,
+    message: "렌더링하지 못했습니다. Code 탭에서 원본 Mermaid 코드를 확인해 주세요.",
+    detail,
+    lineNumber,
+    lineText,
+  };
+}
+
+// Mermaid 원본 오류가 너무 길게 나오지 않도록 핵심 문장만 안내에 붙입니다.
 function formatMermaidError(error) {
-  const message = String(error || "").split("\n").find(Boolean) || "Mermaid parse error";
+  const rawMessage = String(error || "Mermaid parse error");
+  const meaningfulLines = rawMessage
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const lineNumberMessage = meaningfulLines.find((line) => /line\s+\d+/i.test(line));
+  const message = lineNumberMessage || meaningfulLines[0] || "Mermaid parse error";
   return message.length > 180 ? `${message.slice(0, 180)}...` : message;
+}
+
+// Mermaid 오류 문구의 `line N` 패턴을 찾아 원본 코드 위치를 계산합니다.
+function extractMermaidErrorLineNumber(message) {
+  const match = message.match(/line\s+(\d+)/i);
+  return match ? Number(match[1]) : null;
 }
 
 function Section({ title, description, children }) {
