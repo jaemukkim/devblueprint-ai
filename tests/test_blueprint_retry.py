@@ -235,6 +235,82 @@ def test_generate_blueprint_pipeline_assembles_section_outputs(monkeypatch) -> N
     }
 
 
+def test_generate_blueprint_pipeline_retries_with_validation_feedback(monkeypatch) -> None:
+    """섹션별 생성 결과가 DB 검증에 실패하면 feedback을 포함해 pipeline을 한 번 더 시도합니다."""
+    valid_blueprint = make_blueprint()
+    invalid_database = DatabaseDesign(
+        database_schema=[
+            DatabaseTable(
+                name="books",
+                description="테스트용으로 일부러 primary key가 빠진 잘못된 테이블입니다.",
+                columns=[
+                    DatabaseColumn(
+                        name="title",
+                        type="varchar",
+                        description="도서 제목입니다.",
+                        constraints=["not_null"],
+                    ),
+                    DatabaseColumn(
+                        name="created_at",
+                        type="timestamp",
+                        description="생성 시각입니다.",
+                        constraints=["not_null"],
+                    ),
+                ],
+            ),
+            *valid_blueprint.database_schema[1:],
+        ]
+    )
+    feedback_calls = []
+
+    def fake_request_structured_output(user_prompt, text_format, validation_feedback=None):
+        feedback_calls.append((text_format, validation_feedback))
+        if text_format is IdeaAnalysis:
+            return IdeaAnalysis(
+                service_summary="독서 기록 서비스입니다.",
+                target_users=["독서 사용자"],
+                core_entities=["books", "reading_logs"],
+                mvp_scope=["독서 기록"],
+                out_of_scope=["결제"],
+            )
+        if text_format is FeatureDesign:
+            return FeatureDesign(
+                overview=valid_blueprint.overview,
+                features=valid_blueprint.features,
+                tech_stack=valid_blueprint.tech_stack,
+            )
+        if text_format is ApiDesign:
+            return ApiDesign(api_spec=valid_blueprint.api_spec)
+        if text_format is DatabaseDesign:
+            if validation_feedback:
+                return DatabaseDesign(database_schema=valid_blueprint.database_schema)
+            return invalid_database
+        if text_format is DiagramDesign:
+            return DiagramDesign(
+                database_erd=valid_blueprint.database_erd,
+                sequence_diagram=valid_blueprint.sequence_diagram,
+            )
+        if text_format is PlanningDesign:
+            return PlanningDesign(
+                non_functional_requirements=make_design_considerations("reliability"),
+                security_considerations=make_design_considerations("security"),
+                implementation_plan=make_implementation_plan(),
+            )
+        raise AssertionError(f"unexpected text_format: {text_format}")
+
+    monkeypatch.setattr(
+        "app.services.blueprint_generator.request_structured_output_from_openai",
+        fake_request_structured_output,
+    )
+
+    result = generate_blueprint_pipeline_with_retry(BlueprintRequest(idea="독서 기록 서비스"))
+    feedback_values = [feedback for _, feedback in feedback_calls if feedback]
+
+    assert result.database_schema[0].columns[0].constraints == ["primary_key"]
+    assert any("primary_key" in " ".join(feedback) for feedback in feedback_values)
+    assert any("at least 3 columns" in " ".join(feedback) for feedback in feedback_values)
+
+
 def test_regenerate_feature_section_adds_requested_feature_when_llm_omits_it(monkeypatch) -> None:
     current_blueprint = make_blueprint()
     unchanged_feature_design = FeatureDesign(

@@ -1,7 +1,7 @@
 from app.schemas.blueprint import BlueprintRequest, BlueprintResponse
 
 
-BLUEPRINT_PROMPT_VERSION = "quality-v5-pipeline"
+BLUEPRINT_PROMPT_VERSION = "quality-v6-pipeline"
 
 
 # 시스템 프롬프트는 모델의 역할과 설계 품질 기준을 고정합니다.
@@ -133,6 +133,8 @@ API design JSON:
 
 Return 3 to 6 PostgreSQL-friendly tables that support the proposed features and APIs.
 Use snake_case table and column names, practical primary keys, foreign keys, timestamps, status fields, and uniqueness constraints when relevant.
+Every table must include an `id` primary key column unless it is a pure join table. Pure join tables still need at least one primary_key column, at least 3 total columns, and useful metadata such as created_at, status, or sort_order.
+Do not return tiny lookup tables with only id/name. If a lookup concept is too small for at least 3 implementation-ready columns, merge it into the owning table as a status/type column instead.
 Do not design Mermaid diagrams or implementation plan in this step.
 """
 

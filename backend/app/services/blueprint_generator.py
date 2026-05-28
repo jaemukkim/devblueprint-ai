@@ -46,7 +46,8 @@ from app.services.prompts import (
 
 
 MAX_OPENAI_GENERATION_ATTEMPTS = 3
-MAX_OPENAI_PIPELINE_ATTEMPTS = 1
+# 섹션별 생성은 비용이 크므로 전체 재시도는 최소한만 허용하되, 품질 피드백을 한 번은 반영할 수 있게 둡니다.
+MAX_OPENAI_PIPELINE_ATTEMPTS = 2
 REGENERATABLE_SECTIONS = {"features", "api", "database", "diagrams", "planning"}
 REVISION_MARKER = "수정:"
 REVISION_STOPWORDS = {
