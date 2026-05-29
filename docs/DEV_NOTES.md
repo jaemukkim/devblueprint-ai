@@ -228,7 +228,7 @@ npm run build
 
 ## Known Notes
 
-- `pytest-cache-files-*` 폴더 권한 때문에 pytest 실행 후 cache warning이 보일 수 있습니다. 테스트 실패는 아닙니다.
+- pytest cache provider는 Windows 권한 경고를 피하기 위해 `pytest.ini`에서 비활성화했습니다.
 - Mermaid lazy chunk가 커서 Vite chunk size warning이 보일 수 있습니다. 현재 빌드는 통과합니다.
 - FastAPI를 재시작할 때는 uvicorn 프로세스만 종료합니다. Docker Desktop이나 DB 컨테이너를 같이 종료할 필요는 없습니다.
 
