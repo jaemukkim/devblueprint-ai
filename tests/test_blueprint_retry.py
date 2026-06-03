@@ -163,8 +163,8 @@ def test_generate_blueprint_with_retry_returns_second_valid_result(monkeypatch) 
 
     assert result.api_spec[0].path == "/api/v1/books"
     assert feedback_calls[0] is None
-    assert "api path must start with '/': api/v1/items" in feedback_calls[1]
-    assert "api path is too generic: api/v1/items" in feedback_calls[1]
+    assert any("모든 API path는 '/'로 시작" in feedback for feedback in feedback_calls[1])
+    assert any("일반 리소스 대신 서비스 도메인" in feedback for feedback in feedback_calls[1])
 
 
 def test_generate_blueprint_with_retry_fails_after_max_attempts(monkeypatch) -> None:
@@ -307,8 +307,8 @@ def test_generate_blueprint_pipeline_retries_with_validation_feedback(monkeypatc
     feedback_values = [feedback for _, feedback in feedback_calls if feedback]
 
     assert result.database_schema[0].columns[0].constraints == ["primary_key"]
-    assert any("primary_key" in " ".join(feedback) for feedback in feedback_values)
-    assert any("at least 3 columns" in " ".join(feedback) for feedback in feedback_values)
+    assert any("primary_key 컬럼" in " ".join(feedback) for feedback in feedback_values)
+    assert any("최소 3개 컬럼" in " ".join(feedback) for feedback in feedback_values)
 
 
 def test_regenerate_feature_section_adds_requested_feature_when_llm_omits_it(monkeypatch) -> None:
@@ -368,6 +368,51 @@ def test_regenerate_feature_section_ignores_unrelated_api_validation_errors(monk
     )
 
     assert result.features[-1].name == "요리 유튜브 채널 기능"
+
+
+def test_regenerate_feature_section_retries_with_friendly_feedback(monkeypatch) -> None:
+    current_blueprint = make_blueprint()
+    first_feature_design = FeatureDesign(
+        overview="첫 번째 재생성 결과입니다.",
+        features=current_blueprint.features[:4],
+        tech_stack=current_blueprint.tech_stack,
+    )
+    valid_features = [
+        *current_blueprint.features[:-1],
+        Feature(
+            name="독서 모임 공유",
+            description="사용자가 독서 기록을 모임 구성원에게 공유하고 함께 읽을 책을 조율할 수 있게 합니다.",
+            priority="medium",
+        ),
+    ]
+    second_feature_design = FeatureDesign(
+        overview="두 번째 재생성 결과입니다.",
+        features=valid_features,
+        tech_stack=current_blueprint.tech_stack,
+    )
+    responses = [first_feature_design, second_feature_design]
+    feedback_calls = []
+
+    def fake_request_structured_output(user_prompt, text_format, validation_feedback=None):
+        feedback_calls.append(validation_feedback)
+        return responses.pop(0)
+
+    monkeypatch.setattr(
+        "app.services.blueprint_generator.request_structured_output_from_openai",
+        fake_request_structured_output,
+    )
+
+    result = regenerate_blueprint_section_with_retry(
+        "독서 기록 서비스",
+        current_blueprint,
+        "features",
+        None,
+    )
+
+    assert result.features[-1].name == "독서 모임 공유"
+    assert feedback_calls[0] is None
+    assert any("기능 섹션" in feedback for feedback in feedback_calls[1])
+    assert any("5~8개의 구체적인 MVP 기능" in feedback for feedback in feedback_calls[1])
 
 
 def test_regenerate_feature_section_does_not_duplicate_similar_feature(monkeypatch) -> None:

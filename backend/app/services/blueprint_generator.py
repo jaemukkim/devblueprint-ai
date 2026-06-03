@@ -26,6 +26,7 @@ from app.services.blueprint_validator import (
     collect_blueprint_section_quality_errors,
     validate_blueprint_quality,
 )
+from app.services.blueprint_feedback import build_quality_feedback
 from app.services.blueprint_normalizer import normalize_blueprint_output
 from app.services.llm_client import (
     BlueprintGenerationError,
@@ -198,7 +199,7 @@ def regenerate_blueprint_section_with_retry(
             return blueprint
 
         last_errors = errors
-        validation_feedback = errors
+        validation_feedback = build_quality_feedback(errors, section)
 
     joined_errors = "; ".join(last_errors)
     raise BlueprintGenerationError(f"섹션 재생성 품질 검증 재시도에 실패했습니다: {joined_errors}")
@@ -378,7 +379,7 @@ def generate_blueprint_with_retry(user_prompt: str) -> BlueprintResponse:
             return blueprint
 
         last_errors = errors
-        validation_feedback = errors
+        validation_feedback = build_quality_feedback(errors)
 
     joined_errors = "; ".join(last_errors)
     raise BlueprintGenerationError(f"설계도 품질 검증 재시도에 실패했습니다: {joined_errors}")
@@ -397,7 +398,7 @@ def generate_blueprint_pipeline_with_retry(payload: BlueprintRequest) -> Bluepri
             return blueprint
 
         last_errors = errors
-        validation_feedback = errors
+        validation_feedback = build_quality_feedback(errors)
 
     joined_errors = "; ".join(last_errors)
     raise BlueprintGenerationError(f"섹션별 설계도 품질 검증 재시도에 실패했습니다: {joined_errors}")
