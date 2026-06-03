@@ -4,23 +4,25 @@ from app.schemas.blueprint import BlueprintRequest, BlueprintResponse
 BLUEPRINT_PROMPT_VERSION = "quality-v6-pipeline"
 
 
-# 시스템 프롬프트는 모델의 역할과 설계 품질 기준을 고정합니다.
-# 실제 출력 구조는 Pydantic structured output이 강제하므로, 여기서는 판단 규칙에 집중합니다.
-SYSTEM_PROMPT = """
-You are a senior backend architect helping a developer turn a service idea into an implementation-ready system blueprint.
-
-Follow these rules:
+# 시스템 프롬프트의 규칙을 역할별로 나눠두면 이후 LangGraph 노드 단위로 옮기기 쉽습니다.
+MVP_SCOPE_RULES = """
 - Keep the MVP realistic and implementable by one developer, but do not make the result feel too shallow.
 - Design the user's service idea itself. Do not design a generic blueprint generator or this DevBlueprint app.
 - Prefer FastAPI, React, Pydantic, SQLAlchemy, and PostgreSQL unless the user's idea clearly needs something else.
 - Include authentication only when the service idea explicitly needs users, accounts, permissions, private data, social login, or ownership.
 - Do not include payment, Kubernetes, microservices, or complex infrastructure unless the idea explicitly requires them.
+""".strip()
+
+OUTPUT_SIZE_RULES = """
 - Recommend 5 to 8 core features.
 - Recommend 4 to 8 REST API endpoints.
 - Recommend 3 to 6 database tables. If persistence is not required for the MVP, provide future-friendly schema suggestions.
 - Include 3 to 6 non-functional requirements covering reliability, performance, observability, scalability, accessibility, or maintainability.
 - Include 3 to 6 security considerations covering authentication, authorization, data validation, privacy, audit logging, rate limiting, or abuse prevention when relevant.
 - Include 3 to 6 implementation plan steps that a developer could follow in order.
+""".strip()
+
+STRUCTURE_CONSISTENCY_RULES = """
 - Return database_erd as a valid Mermaid erDiagram that matches database_schema.
 - In Mermaid erDiagram entity attributes, use only PK, FK, and UK key tokens. Use UK for unique columns, not UNIQUE. If one column needs multiple key tokens, separate them with commas, for example `uuid user_id PK, FK`.
 - Include enough detail for a developer to understand the first implementation plan.
@@ -34,16 +36,75 @@ Follow these rules:
 - Every database table must include at least 3 columns and a primary_key column.
 - Keep database_schema, database_erd, and api_spec consistent with each other.
 - Keep sequence diagrams focused on one main user flow, but include the major backend steps.
+""".strip()
+
+LANGUAGE_RULES = """
 - Write user-facing descriptions in Korean.
 - Keep technical identifiers, API paths, HTTP methods, JSON types, database types, and constraints in English.
 - constraints must be concise English tokens such as primary_key, not_null, unique, foreign_key.
 - Return a valid Mermaid sequence diagram in sequenceDiagram format.
 - Avoid vague recommendations. Explain why each major choice is useful for the MVP.
+""".strip()
+
+PIPELINE_STAGE_RULES = {
+    "analysis": """
+Return the product domain, target users, core entities, MVP scope, and explicit out-of-scope items.
+Keep the analysis specific to this service idea.
+Write user-facing descriptions in Korean and keep technical identifiers in English where useful.
+""".strip(),
+    "features": """
+Return 5 to 8 concrete MVP features and a practical tech stack.
+Do not design APIs, database tables, diagrams, security items, or implementation plan in this step.
+""".strip(),
+    "api": """
+Return 4 to 8 domain-specific REST API endpoints.
+Each endpoint must map to the feature design and include realistic request and response fields.
+Do not design database tables, diagrams, security items, or implementation plan in this step.
+""".strip(),
+    "database": """
+Return 3 to 6 PostgreSQL-friendly tables that support the proposed features and APIs.
+Use snake_case table and column names, practical primary keys, foreign keys, timestamps, status fields, and uniqueness constraints when relevant.
+Every table must include an `id` primary key column unless it is a pure join table. Pure join tables still need at least one primary_key column, at least 3 total columns, and useful metadata such as created_at, status, or sort_order.
+Do not return tiny lookup tables with only id/name. If a lookup concept is too small for at least 3 implementation-ready columns, merge it into the owning table as a status/type column instead.
+Do not design Mermaid diagrams or implementation plan in this step.
+""".strip(),
+    "diagrams": """
+Return a valid Mermaid erDiagram that includes every database table.
+Return a valid Mermaid sequenceDiagram focused on the main user flow and major backend steps.
+Do not invent tables or endpoints that are not in the provided API and database design.
+""".strip(),
+    "planning": """
+Return 3 to 6 non-functional requirements, 3 to 6 security considerations, and 3 to 6 ordered implementation steps.
+Make every item specific to this service and avoid generic advice.
+""".strip(),
+}
+
+SECTION_REGENERATION_RULES = {
+    "features": (
+        "For features, return the full FeatureDesign with overview, tech_stack, and 5 to 8 features. "
+        "If the instruction asks to add a feature, include a new concrete feature instead of only rewording existing ones."
+    ),
+    "api": "For API, return the full ApiDesign and make at least one endpoint or field meaningfully more implementation-ready.",
+    "database": "For database, return the full DatabaseDesign and make at least one table or column meaningfully more implementation-ready.",
+    "diagrams": "For diagrams, return both database_erd and sequence_diagram, matching the current API and database schema.",
+    "planning": "For planning, return all planning lists and make the implementation steps concrete enough to execute.",
+}
+
+
+# 실제 출력 구조는 Pydantic structured output이 강제하므로 시스템 프롬프트는 판단 규칙에 집중합니다.
+SYSTEM_PROMPT = f"""
+You are a senior backend architect helping a developer turn a service idea into an implementation-ready system blueprint.
+
+Follow these rules:
+{MVP_SCOPE_RULES}
+{OUTPUT_SIZE_RULES}
+{STRUCTURE_CONSISTENCY_RULES}
+{LANGUAGE_RULES}
 """
 
 
 def build_blueprint_prompt(payload: BlueprintRequest) -> str:
-    """사용자의 아이디어를 LLM에게 전달할 프롬프트로 변환합니다."""
+    """전체 설계도를 한 번에 생성할 때 사용하는 레거시 프롬프트를 만듭니다."""
     return f"""
 Create a developer-ready system blueprint for the following service idea.
 
@@ -65,101 +126,63 @@ Avoid one-column tables and avoid API endpoints that cannot be mapped to any fea
 
 
 def build_idea_analysis_prompt(payload: BlueprintRequest) -> str:
-    """섹션별 생성을 시작하기 전에 서비스의 도메인과 MVP 경계를 먼저 정리합니다."""
-    return f"""
-Analyze the following service idea before any detailed design work.
-
-Service idea:
-{payload.idea.strip()}
-
-Return the product domain, target users, core entities, MVP scope, and explicit out-of-scope items.
-Keep the analysis specific to this service idea.
-Write user-facing descriptions in Korean and keep technical identifiers in English where useful.
-"""
+    """섹션별 생성 전에 서비스 도메인과 MVP 경계를 먼저 정리합니다."""
+    return build_stage_prompt(
+        "Analyze the following service idea before any detailed design work.",
+        payload.idea,
+        PIPELINE_STAGE_RULES["analysis"],
+    )
 
 
 def build_feature_design_prompt(idea: str, analysis: object) -> str:
     """분석 결과를 바탕으로 기능과 기술 스택만 생성하도록 지시합니다."""
-    return f"""
-Design only the overview, core features, and recommended tech stack for this service.
-
-Service idea:
-{idea.strip()}
-
-Idea analysis JSON:
-{_dump_context(analysis)}
-
-Return 5 to 8 concrete MVP features and a practical tech stack.
-Do not design APIs, database tables, diagrams, security items, or implementation plan in this step.
-"""
+    return build_stage_prompt(
+        "Design only the overview, core features, and recommended tech stack for this service.",
+        idea,
+        PIPELINE_STAGE_RULES["features"],
+        **{"Idea analysis": analysis},
+    )
 
 
 def build_api_design_prompt(idea: str, analysis: object, feature_design: object) -> str:
     """확정된 기능 목록을 기준으로 API만 생성하도록 지시합니다."""
-    return f"""
-Design only the REST API endpoints for this service.
-
-Service idea:
-{idea.strip()}
-
-Idea analysis JSON:
-{_dump_context(analysis)}
-
-Feature design JSON:
-{_dump_context(feature_design)}
-
-Return 4 to 8 domain-specific REST API endpoints.
-Each endpoint must map to the feature design and include realistic request and response fields.
-Do not design database tables, diagrams, security items, or implementation plan in this step.
-"""
+    return build_stage_prompt(
+        "Design only the REST API endpoints for this service.",
+        idea,
+        PIPELINE_STAGE_RULES["api"],
+        **{
+            "Idea analysis": analysis,
+            "Feature design": feature_design,
+        },
+    )
 
 
 def build_database_design_prompt(idea: str, analysis: object, feature_design: object, api_design: object) -> str:
     """기능과 API를 기준으로 DB schema만 생성하도록 지시합니다."""
-    return f"""
-Design only the database schema for this service.
-
-Service idea:
-{idea.strip()}
-
-Idea analysis JSON:
-{_dump_context(analysis)}
-
-Feature design JSON:
-{_dump_context(feature_design)}
-
-API design JSON:
-{_dump_context(api_design)}
-
-Return 3 to 6 PostgreSQL-friendly tables that support the proposed features and APIs.
-Use snake_case table and column names, practical primary keys, foreign keys, timestamps, status fields, and uniqueness constraints when relevant.
-Every table must include an `id` primary key column unless it is a pure join table. Pure join tables still need at least one primary_key column, at least 3 total columns, and useful metadata such as created_at, status, or sort_order.
-Do not return tiny lookup tables with only id/name. If a lookup concept is too small for at least 3 implementation-ready columns, merge it into the owning table as a status/type column instead.
-Do not design Mermaid diagrams or implementation plan in this step.
-"""
+    return build_stage_prompt(
+        "Design only the database schema for this service.",
+        idea,
+        PIPELINE_STAGE_RULES["database"],
+        **{
+            "Idea analysis": analysis,
+            "Feature design": feature_design,
+            "API design": api_design,
+        },
+    )
 
 
 def build_diagram_design_prompt(idea: str, analysis: object, api_design: object, database_design: object) -> str:
     """확정된 API와 DB를 기준으로 Mermaid 다이어그램만 생성하도록 지시합니다."""
-    return f"""
-Create only the Mermaid diagrams for this service.
-
-Service idea:
-{idea.strip()}
-
-Idea analysis JSON:
-{_dump_context(analysis)}
-
-API design JSON:
-{_dump_context(api_design)}
-
-Database design JSON:
-{_dump_context(database_design)}
-
-Return a valid Mermaid erDiagram that includes every database table.
-Return a valid Mermaid sequenceDiagram focused on the main user flow and major backend steps.
-Do not invent tables or endpoints that are not in the provided API and database design.
-"""
+    return build_stage_prompt(
+        "Create only the Mermaid diagrams for this service.",
+        idea,
+        PIPELINE_STAGE_RULES["diagrams"],
+        **{
+            "Idea analysis": analysis,
+            "API design": api_design,
+            "Database design": database_design,
+        },
+    )
 
 
 def build_planning_design_prompt(
@@ -170,27 +193,17 @@ def build_planning_design_prompt(
     database_design: object,
 ) -> str:
     """설계 결과를 구현 가능한 계획과 운영 체크리스트로 보강합니다."""
-    return f"""
-Design only the implementation and operational planning sections for this service.
-
-Service idea:
-{idea.strip()}
-
-Idea analysis JSON:
-{_dump_context(analysis)}
-
-Feature design JSON:
-{_dump_context(feature_design)}
-
-API design JSON:
-{_dump_context(api_design)}
-
-Database design JSON:
-{_dump_context(database_design)}
-
-Return 3 to 6 non-functional requirements, 3 to 6 security considerations, and 3 to 6 ordered implementation steps.
-Make every item specific to this service and avoid generic advice.
-"""
+    return build_stage_prompt(
+        "Design only the implementation and operational planning sections for this service.",
+        idea,
+        PIPELINE_STAGE_RULES["planning"],
+        **{
+            "Idea analysis": analysis,
+            "Feature design": feature_design,
+            "API design": api_design,
+            "Database design": database_design,
+        },
+    )
 
 
 def build_section_regeneration_prompt(
@@ -227,21 +240,8 @@ Write user-facing descriptions in Korean and keep technical identifiers in Engli
 
 
 def build_section_regeneration_guidance(section: str) -> str:
-    """섹션별 재생성 의도를 모델이 더 명확히 따르도록 추가 지시를 만듭니다."""
-    if section == "features":
-        return (
-            "For features, return the full FeatureDesign with overview, tech_stack, and 5 to 8 features. "
-            "If the instruction asks to add a feature, include a new concrete feature instead of only rewording existing ones."
-        )
-    if section == "api":
-        return "For API, return the full ApiDesign and make at least one endpoint or field meaningfully more implementation-ready."
-    if section == "database":
-        return "For database, return the full DatabaseDesign and make at least one table or column meaningfully more implementation-ready."
-    if section == "diagrams":
-        return "For diagrams, return both database_erd and sequence_diagram, matching the current API and database schema."
-    if section == "planning":
-        return "For planning, return all planning lists and make the implementation steps concrete enough to execute."
-    return ""
+    """섹션별 재생성 의도를 모델이 명확히 따르도록 추가 지시를 만듭니다."""
+    return SECTION_REGENERATION_RULES.get(section, "")
 
 
 def build_blueprint_revision_prompt(
@@ -266,6 +266,23 @@ Return the full revised blueprint, not a partial patch.
 Keep any useful parts of the current blueprint, but update every affected feature, API endpoint, database table, ERD relationship, and sequence step so the final result is internally consistent.
 Also update non_functional_requirements, security_considerations, and implementation_plan when the revision changes scope, user roles, data sensitivity, or operational risk.
 Do not mention that this is a revision in the overview unless it helps explain the service.
+"""
+
+
+def build_stage_prompt(task: str, idea: str, rules: str, **contexts: object) -> str:
+    """단계별 생성 프롬프트의 공통 골격을 조립합니다."""
+    context_blocks = "\n\n".join(
+        f"{label} JSON:\n{_dump_context(value)}" for label, value in contexts.items()
+    )
+    context_section = f"\n\n{context_blocks}" if context_blocks else ""
+
+    return f"""
+{task}
+
+Service idea:
+{idea.strip()}{context_section}
+
+{rules}
 """
 
 

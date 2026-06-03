@@ -1899,6 +1899,16 @@ th {
   max-width: 100%;
 }
 
+.diagram-loading {
+  display: grid;
+  min-height: 240px;
+  place-items: center;
+  padding: 14px;
+  color: #607084;
+  font-size: 13px;
+  font-weight: 800;
+}
+
 .diagram-error {
   overflow-x: auto;
   color: #b42318;
