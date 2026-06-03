@@ -1,9 +1,7 @@
 const configuredApiBaseUrl = import.meta.env.VITE_API_BASE_URL;
 
-// 로컬 Docker API 포트와 충돌하는 8000 설정이 주입되면, 패치된 로컬 FastAPI 서버인 8010으로 보정합니다.
-const API_BASE_URL = configuredApiBaseUrl === "http://localhost:8000"
-  ? "http://localhost:8010"
-  : configuredApiBaseUrl || "http://localhost:8010";
+// Vite 환경변수에 지정된 FastAPI 주소를 그대로 사용합니다.
+const API_BASE_URL = configuredApiBaseUrl || "http://localhost:8010";
 
 async function requestJson(path, options = {}) {
   let response;
