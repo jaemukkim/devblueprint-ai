@@ -826,7 +826,7 @@ textarea:focus {
 
 .dev-status-panel {
   display: grid;
-  grid-template-columns: minmax(0, 1.6fr) repeat(3, minmax(70px, 0.7fr)) 34px;
+  grid-template-columns: minmax(0, 1.6fr) repeat(5, minmax(64px, 0.7fr)) 34px;
   gap: 8px;
   align-items: stretch;
   margin-top: 18px;
@@ -869,8 +869,9 @@ textarea:focus {
 .dev-status-panel p {
   grid-column: 1 / -1;
   margin: 0;
-  color: #fca5a5;
+  color: #bfdbfe;
   font-size: 12px;
+  line-height: 1.45;
 }
 
 .app-board {

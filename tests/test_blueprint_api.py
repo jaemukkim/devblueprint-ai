@@ -18,6 +18,9 @@ def test_health_check_returns_ok() -> None:
     assert response.status_code == 200
     assert data["status"] == "ok"
     assert data["use_openai"] == settings.use_openai
+    assert data["openai"]["model"] == settings.openai_model
+    assert data["openai"]["api_key_configured"] == bool(settings.openai_api_key)
+    assert data["openai"]["status"] in {"configured", "disabled", "missing_key"}
     assert data["repository_backend"] == settings.repository_backend
 
 
@@ -102,6 +105,23 @@ def test_generate_blueprint_returns_structured_openai_error(monkeypatch) -> None
     assert detail["error_code"] == "openai_call_failed"
     assert detail["message"] == "OpenAI API 호출 중 오류가 발생했습니다."
     assert detail["hint"]
+
+
+def test_generate_blueprint_classifies_openai_model_error(monkeypatch) -> None:
+    def raise_model_error(_payload):
+        raise BlueprintGenerationError("OpenAI API 호출 중 오류가 발생했습니다. status=404 type=NotFoundError")
+
+    monkeypatch.setattr(blueprint_api, "generate_blueprint", raise_model_error)
+
+    response = client.post(
+        "/api/v1/blueprint/generate",
+        json={"idea": "OpenAI 모델 오류 분류를 확인하는 테스트 서비스"},
+    )
+
+    assert response.status_code == 503
+    detail = response.json()["detail"]
+    assert detail["error_code"] == "openai_model_not_found"
+    assert "OPENAI_MODEL" in detail["hint"]
 
 
 def test_generate_blueprint_returns_structured_validation_error(monkeypatch) -> None:

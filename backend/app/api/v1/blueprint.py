@@ -191,6 +191,14 @@ def build_error_detail(message: str, error_code: str, hint: str, extra: dict | N
 def classify_generation_error(message: str) -> tuple[str, str]:
     if "OPENAI_API_KEY" in message:
         return "openai_api_key_missing", "backend .env의 OPENAI_API_KEY 값을 확인해 주세요."
+    if "status=401" in message:
+        return "openai_auth_failed", "OPENAI_API_KEY가 유효한지 확인해 주세요."
+    if "status=403" in message:
+        return "openai_permission_denied", "현재 API key가 요청한 모델이나 기능을 사용할 권한이 있는지 확인해 주세요."
+    if "status=404" in message:
+        return "openai_model_not_found", "OPENAI_MODEL 값이 실제 사용 가능한 모델명인지 확인해 주세요."
+    if "status=429" in message:
+        return "openai_rate_limited", "OpenAI 사용량 한도, 결제 상태, rate limit을 확인한 뒤 다시 시도해 주세요."
     if "OpenAI API 호출" in message:
         return "openai_call_failed", "API key, 모델 권한, 네트워크, 프록시 설정을 확인해 주세요."
     if "파싱" in message:

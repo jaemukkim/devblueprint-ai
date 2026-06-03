@@ -451,6 +451,7 @@ function App() {
   const [sectionPreview, setSectionPreview] = useState(null);
   const [isShowingSectionPreview, setIsShowingSectionPreview] = useState(false);
   const [regenerationNotice, setRegenerationNotice] = useState("");
+  const [lastRegenerationFailure, setLastRegenerationFailure] = useState(null);
   const [error, setError] = useState(null);
   // 개발 중 현재 연결된 API 서버와 백엔드 모드를 빠르게 확인하기 위한 상태입니다.
   const [environmentStatus, setEnvironmentStatus] = useState({
@@ -601,14 +602,17 @@ function App() {
     scrollToSection("result");
   }
 
-  async function handleRegenerateSection(section) {
+  async function handleRegenerateSection(section, presetInstruction = null) {
     if (!selectedBlueprintId || isRegeneratingSection || isRevising) {
       return;
     }
 
-    const instruction = window.prompt(
+    const previousInstruction = lastRegenerationFailure?.section === section
+      ? lastRegenerationFailure.instruction
+      : "";
+    const instruction = presetInstruction ?? window.prompt(
       `${SECTION_LABELS[section] || "섹션"} 재생성 요청`,
-      DEFAULT_REGENERATION_INSTRUCTIONS[section] || "",
+      previousInstruction || DEFAULT_REGENERATION_INSTRUCTIONS[section] || "",
     );
 
     if (instruction === null) {
@@ -624,6 +628,7 @@ function App() {
     setIsRegeneratingSection(true);
     setError(null);
     setRegenerationNotice("");
+    setLastRegenerationFailure(null);
 
     try {
       const preview = await regenerateBlueprintSection(selectedBlueprintId, section, instruction?.trim() || undefined);
@@ -642,10 +647,25 @@ function App() {
       setActiveResultTab(section === "planning" ? "plan" : section);
       scrollToSection("result");
     } catch (err) {
-      setRegenerationNotice(`재생성 실패: ${toUserError(err).message}`);
+      const userError = toUserError(err);
+      const trimmedInstruction = instruction?.trim() || "";
+      setLastRegenerationFailure({
+        section,
+        instruction: trimmedInstruction,
+        message: userError.message,
+      });
+      setRegenerationNotice(`재생성 실패: ${userError.message}`);
     } finally {
       setIsRegeneratingSection(false);
     }
+  }
+
+  function handleRetryRegeneration() {
+    if (!lastRegenerationFailure) {
+      return;
+    }
+
+    handleRegenerateSection(lastRegenerationFailure.section, lastRegenerationFailure.instruction);
   }
 
   async function handleApplySectionPreview() {
@@ -912,9 +932,11 @@ function App() {
                 isRegeneratingSection={isRegeneratingSection}
                 onApplySectionPreview={handleApplySectionPreview}
                 onRegenerateSection={handleRegenerateSection}
+                onRetryRegeneration={handleRetryRegeneration}
                 onTogglePreview={() => setIsShowingSectionPreview((current) => !current)}
                 previewChangeCount={previewChangeCount}
                 previewSection={sectionPreview?.section || null}
+                regenerationFailure={lastRegenerationFailure}
                 regenerationNotice={regenerationNotice}
                 setActiveTab={setActiveResultTab}
               />
@@ -950,6 +972,7 @@ function ErrorNotice({ error }) {
 // 로컬 개발 중 프론트가 바라보는 API와 백엔드 health 상태를 요약합니다.
 function DevEnvironmentStatus({ apiBaseUrl, environmentStatus, onRefresh }) {
   const health = environmentStatus.health;
+  const openai = health?.openai || null;
   const statusLabel = environmentStatus.loading
     ? "확인 중"
     : environmentStatus.error
@@ -968,7 +991,15 @@ function DevEnvironmentStatus({ apiBaseUrl, environmentStatus, onRefresh }) {
       </div>
       <div>
         <span>OpenAI</span>
-        <strong>{health ? (health.use_openai ? "ON" : "OFF") : "-"}</strong>
+        <strong>{openai ? openai.status : health ? (health.use_openai ? "ON" : "OFF") : "-"}</strong>
+      </div>
+      <div>
+        <span>Model</span>
+        <strong>{openai?.model || "-"}</strong>
+      </div>
+      <div>
+        <span>Key</span>
+        <strong>{openai ? (openai.api_key_configured ? "SET" : "MISSING") : "-"}</strong>
       </div>
       <div>
         <span>Storage</span>
@@ -977,6 +1008,7 @@ function DevEnvironmentStatus({ apiBaseUrl, environmentStatus, onRefresh }) {
       <button type="button" onClick={onRefresh} aria-label="개발 환경 상태 새로고침">
         <RefreshCw size={14} />
       </button>
+      {openai?.message && <p>{openai.message}</p>}
       {environmentStatus.error && <p>{environmentStatus.error}</p>}
     </div>
   );
@@ -1019,9 +1051,11 @@ function BlueprintView({
   isRegeneratingSection,
   onApplySectionPreview,
   onRegenerateSection,
+  onRetryRegeneration,
   onTogglePreview,
   previewChangeCount,
   previewSection,
+  regenerationFailure,
   regenerationNotice,
   setActiveTab,
 }) {
@@ -1072,6 +1106,17 @@ function BlueprintView({
               <button className="secondary-button" type="button" onClick={onTogglePreview}>
                 {isPreviewVisible ? <X size={16} /> : <CheckCircle2 size={16} />}
                 {isPreviewVisible ? "원본 보기" : "미리보기 보기"}
+              </button>
+            )}
+            {regenerationFailure && (
+              <button
+                className="secondary-button"
+                disabled={!canRegenerate || isRegeneratingSection}
+                onClick={onRetryRegeneration}
+                type="button"
+              >
+                {isRegeneratingSection ? <Loader2 className="spin" size={16} /> : <RefreshCw size={16} />}
+                같은 요청 다시 시도
               </button>
             )}
             {regenerationSection && (
