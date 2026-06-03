@@ -1,0 +1,32 @@
+[
+  {
+    "id": "recipe_recommendation",
+    "idea": "냉장고에 있는 재료를 입력하면 만들 수 있는 요리를 추천하고 레시피와 요리 유튜브 채널을 함께 보여주는 서비스",
+    "expected_domain_terms": ["recipes", "ingredients", "recommendations"],
+    "expected_korean_terms": ["요리", "재료", "레시피"]
+  },
+  {
+    "id": "reading_journal",
+    "idea": "사용자가 읽은 책을 기록하고 인상 깊은 문장과 독서 통계를 관리하는 독서 기록 앱",
+    "expected_domain_terms": ["books", "reading_logs", "quotes"],
+    "expected_korean_terms": ["독서", "책", "문장"]
+  },
+  {
+    "id": "reservation_matching",
+    "idea": "동네 풋살장을 예약하고 인원 부족 팀과 개인 참가자를 매칭해주는 예약 서비스",
+    "expected_domain_terms": ["reservations", "venues", "matches"],
+    "expected_korean_terms": ["풋살", "예약", "매칭"]
+  },
+  {
+    "id": "community_platform",
+    "idea": "소셜 로그인이 있는 개발자 커뮤니티에서 글, 댓글, 북마크, 신고를 관리하는 플랫폼",
+    "expected_domain_terms": ["posts", "comments", "bookmarks", "reports"],
+    "expected_korean_terms": ["커뮤니티", "댓글", "신고"]
+  },
+  {
+    "id": "admin_dashboard",
+    "idea": "고객 문의와 주문 처리 상태를 운영자가 한 화면에서 추적하는 관리자 대시보드 서비스",
+    "expected_domain_terms": ["tickets", "orders", "operators"],
+    "expected_korean_terms": ["관리자", "문의", "주문"]
+  }
+]
