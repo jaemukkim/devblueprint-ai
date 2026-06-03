@@ -161,7 +161,10 @@ def apply_blueprint_section_preview(
         raise ValueError("지원하지 않는 설계도 섹션입니다.")
 
     blueprint = normalize_blueprint_output(preview_blueprint)
-    validate_blueprint_quality(blueprint)
+    section_errors = collect_blueprint_section_quality_errors(blueprint, normalized_section)
+    if section_errors:
+        joined_errors = "; ".join(section_errors)
+        raise BlueprintGenerationError(f"섹션 미리보기 적용 검증에 실패했습니다: {joined_errors}")
     revision_instruction = build_section_apply_instruction(normalized_section, instruction)
     cache_key = build_section_apply_cache_key(idea, normalized_section, blueprint, instruction)
     return blueprint_repository.save(

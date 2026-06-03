@@ -1,3 +1,5 @@
+import re
+
 import httpx
 from openai import OpenAI, OpenAIError
 
@@ -48,7 +50,7 @@ def request_structured_output_from_openai(
             text_format=text_format,
         )
     except OpenAIError as exc:
-        raise BlueprintGenerationError("OpenAI API 호출 중 오류가 발생했습니다.") from exc
+        raise BlueprintGenerationError(format_openai_error(exc)) from exc
 
     if response.output_parsed is None:
         raise BlueprintGenerationError(f"OpenAI 응답을 {text_format.__name__} 형식으로 파싱하지 못했습니다.")
@@ -60,6 +62,29 @@ def create_openai_client() -> OpenAI:
     """로컬 개발 환경의 프록시 변수 때문에 OpenAI 호출이 막히지 않도록 전용 HTTP 클라이언트를 만듭니다."""
     http_client = httpx.Client(trust_env=False)
     return OpenAI(api_key=settings.openai_api_key, http_client=http_client)
+
+
+def format_openai_error(exc: OpenAIError) -> str:
+    """API key를 노출하지 않고 OpenAI 실패 원인을 화면에서 구분할 수 있게 정리합니다."""
+    parts = ["OpenAI API 호출 중 오류가 발생했습니다."]
+    status_code = getattr(exc, "status_code", None)
+    if status_code:
+        parts.append(f"status={status_code}")
+
+    error_type = type(exc).__name__
+    if error_type:
+        parts.append(f"type={error_type}")
+
+    message = str(exc).strip()
+    if message:
+        parts.append(f"message={sanitize_openai_error_message(message)}")
+
+    return " ".join(parts)
+
+
+def sanitize_openai_error_message(message: str) -> str:
+    """OpenAI 오류 메시지에 key 형태의 민감값이 섞여도 그대로 응답하지 않게 가립니다."""
+    return re.sub(r"sk-[A-Za-z0-9_-]+", "sk-***", message)
 
 
 def append_validation_feedback(user_prompt: str, validation_feedback: list[str] | None) -> str:

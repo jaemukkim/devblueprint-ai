@@ -361,7 +361,7 @@ const ERROR_COPY_BY_TYPE = {
   },
   openai: {
     title: "OpenAI 호출 실패",
-    message: (message, hint) => hint || message || "OpenAI 연결, API key, 모델 권한 또는 네트워크 설정을 확인해 주세요.",
+    message: (message, hint) => message || hint || "OpenAI 연결, API key, 모델 권한 또는 네트워크 설정을 확인해 주세요.",
   },
   validation: {
     title: "설계도 품질 검증 실패",

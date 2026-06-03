@@ -302,6 +302,35 @@ def test_apply_regenerated_section_preview_saves_new_blueprint(monkeypatch) -> N
     assert blueprint_repository.count() == 2
 
 
+def test_apply_regenerated_feature_preview_ignores_unrelated_api_errors(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "use_openai", False)
+    blueprint_repository.clear()
+
+    create_response = client.post(
+        "/api/v1/blueprint/generate",
+        json={"idea": "기능 미리보기 적용 검증 범위 테스트 서비스"},
+    )
+    blueprint_id = client.get("/api/v1/blueprints").json()["items"][0]["id"]
+    preview_result = create_response.json()
+    preview_result["features"][0]["description"] = "기능 섹션 변경분만 적용할 수 있는지 확인하는 충분히 구체적인 설명입니다."
+    preview_result["api_spec"][0]["path"] = "api/v1/broken-path"
+
+    apply_response = client.post(
+        f"/api/v1/blueprints/{blueprint_id}/sections/features/apply",
+        json={
+            "instruction": "기능 설명을 더 구체화해줘",
+            "result": preview_result,
+        },
+    )
+
+    assert apply_response.status_code == 200
+    data = apply_response.json()
+    assert data["id"] != blueprint_id
+    assert data["result"]["features"][0]["description"] == preview_result["features"][0]["description"]
+    assert data["result"]["api_spec"][0]["path"] == "api/v1/broken-path"
+    assert blueprint_repository.count() == 2
+
+
 def test_regenerate_blueprint_section_accepts_alias(monkeypatch) -> None:
     monkeypatch.setattr(settings, "use_openai", False)
     blueprint_repository.clear()
