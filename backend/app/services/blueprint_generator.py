@@ -106,6 +106,20 @@ class BlueprintPipelineState:
         return self.payload.idea.strip()
 
 
+@dataclass
+class SectionRegenerationState:
+    """LangGraph 기반 섹션 재생성 상태입니다."""
+
+    idea: str
+    current_blueprint: BlueprintResponse
+    section: str
+    instruction: str | None = None
+    validation_feedback: list[str] | None = None
+    blueprint: BlueprintResponse | None = None
+    validation_errors: list[str] | None = None
+    retry_count: int = 0
+
+
 def generate_blueprint(payload: BlueprintRequest) -> BlueprintResponse:
     """서비스 아이디어를 받아 시스템 설계도 응답을 생성합니다."""
     cache_key = build_cache_key(payload.idea)
@@ -217,25 +231,95 @@ def regenerate_blueprint_section_with_retry(
     instruction: str | None = None,
 ) -> BlueprintResponse:
     """부분 재생성 결과가 전체 설계 품질을 깨뜨리면 feedback과 함께 같은 섹션을 재시도합니다."""
-    validation_feedback: list[str] | None = None
-    last_errors: list[str] = []
+    state = SectionRegenerationState(
+        idea=idea,
+        current_blueprint=current_blueprint,
+        section=section,
+        instruction=instruction,
+    )
+    graph_result = build_section_regeneration_graph().invoke(
+        state,
+        {"recursion_limit": MAX_OPENAI_GENERATION_ATTEMPTS * 3 + 2},
+    )
+    blueprint = graph_result.get("blueprint")
+    if blueprint is None:
+        raise BlueprintGenerationError("섹션 재생성 그래프가 미리보기 결과를 만들지 못했습니다.")
+    return blueprint
 
-    for _ in range(MAX_OPENAI_GENERATION_ATTEMPTS):
-        blueprint = normalize_blueprint_output(
-            regenerate_blueprint_section_once(idea, current_blueprint, section, instruction, validation_feedback)
+
+def build_section_regeneration_graph():
+    """섹션 재생성 전용 LangGraph를 구성합니다."""
+    graph = StateGraph(SectionRegenerationState)
+
+    graph.add_node("regenerate_selected_section", regenerate_selected_section_node)
+    graph.add_node("validate_selected_section", validate_selected_section_node)
+    graph.add_node("fail_section_regeneration", fail_section_regeneration_node)
+
+    graph.add_edge(START, "regenerate_selected_section")
+    graph.add_edge("regenerate_selected_section", "validate_selected_section")
+    graph.add_conditional_edges(
+        "validate_selected_section",
+        route_section_regeneration,
+        {
+            "retry": "regenerate_selected_section",
+            "complete": END,
+            "fail": "fail_section_regeneration",
+        },
+    )
+    graph.add_edge("fail_section_regeneration", END)
+    return graph.compile()
+
+
+def regenerate_selected_section_node(state: SectionRegenerationState) -> dict:
+    """선택된 섹션만 다시 생성하고 전체 설계도 형태로 합칩니다."""
+    blueprint = normalize_blueprint_output(
+        regenerate_blueprint_section_once(
+            state.idea,
+            state.current_blueprint,
+            state.section,
+            state.instruction,
+            state.validation_feedback,
         )
-        errors = [
-            *collect_blueprint_section_quality_errors(blueprint, section),
-            *collect_section_regeneration_errors(current_blueprint, blueprint, section, instruction),
-        ]
+    )
+    return {"blueprint": blueprint}
 
-        if not errors:
-            return blueprint
 
-        last_errors = errors
-        validation_feedback = build_quality_feedback(errors, section)
+def validate_selected_section_node(state: SectionRegenerationState) -> dict:
+    """재생성된 섹션 품질과 사용자 지시 반영 여부를 검증합니다."""
+    if state.blueprint is None:
+        raise BlueprintGenerationError("섹션 검증 전에 재생성 결과가 필요합니다.")
 
-    joined_errors = "; ".join(last_errors)
+    errors = [
+        *collect_blueprint_section_quality_errors(state.blueprint, state.section),
+        *collect_section_regeneration_errors(
+            state.current_blueprint,
+            state.blueprint,
+            state.section,
+            state.instruction,
+        ),
+    ]
+    if not errors:
+        return {"validation_errors": []}
+
+    return {
+        "validation_errors": errors,
+        "validation_feedback": build_quality_feedback(errors, state.section),
+        "retry_count": state.retry_count + 1,
+    }
+
+
+def route_section_regeneration(state: SectionRegenerationState) -> str:
+    """검증 결과에 따라 완료, 재시도, 실패 경로를 고릅니다."""
+    if not state.validation_errors:
+        return "complete"
+    if state.retry_count >= MAX_OPENAI_GENERATION_ATTEMPTS:
+        return "fail"
+    return "retry"
+
+
+def fail_section_regeneration_node(state: SectionRegenerationState) -> dict:
+    """재시도 한도를 넘은 섹션 재생성 오류를 사용자에게 전달합니다."""
+    joined_errors = "; ".join(state.validation_errors or [])
     raise BlueprintGenerationError(f"섹션 재생성 품질 검증 재시도에 실패했습니다: {joined_errors}")
 
 
