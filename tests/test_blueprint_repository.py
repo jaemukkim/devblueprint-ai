@@ -138,8 +138,62 @@ def test_in_memory_blueprint_repository_normalizes_legacy_mermaid_on_read() -> N
 def test_in_memory_blueprint_repository_clear_removes_items() -> None:
     repository = InMemoryBlueprintRepository()
     repository.save("test-key", make_repository_test_blueprint())
+    stored_blueprint = repository.get_stored_by_key("test-key")
+
+    assert stored_blueprint is not None
+    repository.record_run_event(
+        blueprint_id=stored_blueprint.id,
+        run_type="blueprint_generation",
+        node_name="validate_blueprint",
+        phase="route",
+        retry_count=1,
+        route="complete",
+        error_count=0,
+    )
 
     repository.clear()
 
     assert repository.get("test-key") is None
+    assert repository.list_run_events(stored_blueprint.id) == []
     assert repository.count() == 0
+
+
+def test_in_memory_blueprint_repository_records_run_events() -> None:
+    repository = InMemoryBlueprintRepository()
+    stored_blueprint = repository.save("test-key", make_repository_test_blueprint())
+
+    run_event = repository.record_run_event(
+        blueprint_id=stored_blueprint.id,
+        run_type="section_regeneration",
+        section="features",
+        node_name="validate_selected_section",
+        phase="route",
+        retry_count=2,
+        route="retry",
+        error_count=1,
+    )
+    run_events = repository.list_run_events(stored_blueprint.id)
+
+    assert len(run_events) == 1
+    assert run_events[0] == run_event
+    assert run_events[0] is not run_event
+    assert run_events[0].blueprint_id == stored_blueprint.id
+    assert run_events[0].run_type == "section_regeneration"
+    assert run_events[0].section == "features"
+    assert run_events[0].route == "retry"
+
+
+def test_in_memory_blueprint_repository_deletes_run_events_with_blueprint() -> None:
+    repository = InMemoryBlueprintRepository()
+    stored_blueprint = repository.save("test-key", make_repository_test_blueprint())
+    repository.record_run_event(
+        blueprint_id=stored_blueprint.id,
+        run_type="blueprint_generation",
+        node_name="validate_blueprint",
+        phase="route",
+    )
+
+    deleted = repository.delete_by_id(stored_blueprint.id)
+
+    assert deleted is True
+    assert repository.list_run_events(stored_blueprint.id) == []

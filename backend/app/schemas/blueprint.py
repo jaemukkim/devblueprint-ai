@@ -166,6 +166,23 @@ class BlueprintSectionRegenerationResponse(BaseModel):
     result: BlueprintResponse
 
 
+class BlueprintRunEventResponse(BaseModel):
+    id: str
+    blueprint_id: str
+    run_type: str
+    section: str | None = None
+    node_name: str
+    phase: str
+    retry_count: int
+    route: str | None = None
+    error_count: int
+    created_at: datetime
+
+
+class BlueprintRunEventListResponse(BaseModel):
+    items: list[BlueprintRunEventResponse]
+
+
 # 저장된 설계도 목록 조회 응답입니다.
 # 이후 pagination 정보를 추가하기 쉽도록 배열을 바로 반환하지 않고 items로 감쌉니다.
 class BlueprintListResponse(BaseModel):

@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.db.session import SessionLocal
-from app.models.blueprint import BlueprintModel
+from app.models.blueprint import BlueprintModel, BlueprintRunEventModel
 from app.schemas.blueprint import BlueprintResponse
 from app.services.blueprint_normalizer import normalize_blueprint_output
 
@@ -23,6 +23,22 @@ class StoredBlueprint:
     idea: str
     revision_instruction: str | None
     result: BlueprintResponse
+    created_at: datetime
+
+
+@dataclass
+class StoredBlueprintRunEvent:
+    """LangGraph 실행 중 발생한 노드 단위 이력입니다."""
+
+    id: str
+    blueprint_id: str
+    run_type: str
+    section: str | None
+    node_name: str
+    phase: str
+    retry_count: int
+    route: str | None
+    error_count: int
     created_at: datetime
 
 
@@ -60,6 +76,24 @@ class BlueprintRepository(ABC):
         """저장된 설계도 ID로 결과를 삭제하고 성공 여부를 반환합니다."""
 
     @abstractmethod
+    def record_run_event(
+        self,
+        blueprint_id: str,
+        run_type: str,
+        node_name: str,
+        phase: str,
+        section: str | None = None,
+        retry_count: int = 0,
+        route: str | None = None,
+        error_count: int = 0,
+    ) -> StoredBlueprintRunEvent:
+        """설계도 생성 그래프의 노드 실행 이력을 저장합니다."""
+
+    @abstractmethod
+    def list_run_events(self, blueprint_id: str, limit: int = 100) -> list[StoredBlueprintRunEvent]:
+        """설계도 ID에 연결된 최근 실행 이력을 조회합니다."""
+
+    @abstractmethod
     def clear(self) -> None:
         """테스트나 개발 중 캐시를 비울 때 사용합니다."""
 
@@ -73,6 +107,7 @@ class InMemoryBlueprintRepository(BlueprintRepository):
 
     def __init__(self) -> None:
         self._items: dict[str, StoredBlueprint] = {}
+        self._run_events: dict[str, list[StoredBlueprintRunEvent]] = {}
 
     def get(self, key: str) -> BlueprintResponse | None:
         stored_blueprint = self._items.get(key)
@@ -129,12 +164,44 @@ class InMemoryBlueprintRepository(BlueprintRepository):
         for key, stored_blueprint in list(self._items.items()):
             if stored_blueprint.id == blueprint_id:
                 del self._items[key]
+                self._run_events.pop(blueprint_id, None)
                 return True
 
         return False
 
+    def record_run_event(
+        self,
+        blueprint_id: str,
+        run_type: str,
+        node_name: str,
+        phase: str,
+        section: str | None = None,
+        retry_count: int = 0,
+        route: str | None = None,
+        error_count: int = 0,
+    ) -> StoredBlueprintRunEvent:
+        run_event = StoredBlueprintRunEvent(
+            id=str(uuid4()),
+            blueprint_id=blueprint_id,
+            run_type=run_type,
+            section=section,
+            node_name=node_name,
+            phase=phase,
+            retry_count=retry_count,
+            route=route,
+            error_count=error_count,
+            created_at=datetime.now(timezone.utc),
+        )
+        self._run_events.setdefault(blueprint_id, []).append(run_event)
+        return deepcopy(run_event)
+
+    def list_run_events(self, blueprint_id: str, limit: int = 100) -> list[StoredBlueprintRunEvent]:
+        run_events = self._run_events.get(blueprint_id, [])
+        return deepcopy(run_events[-limit:])
+
     def clear(self) -> None:
         self._items.clear()
+        self._run_events.clear()
 
     def count(self) -> int:
         return len(self._items)
@@ -194,9 +261,52 @@ class PostgresBlueprintRepository(BlueprintRepository):
             if blueprint_model is None:
                 return False
 
+            db.execute(delete(BlueprintRunEventModel).where(BlueprintRunEventModel.blueprint_id == blueprint_id))
             db.delete(blueprint_model)
             db.commit()
             return True
+
+    def record_run_event(
+        self,
+        blueprint_id: str,
+        run_type: str,
+        node_name: str,
+        phase: str,
+        section: str | None = None,
+        retry_count: int = 0,
+        route: str | None = None,
+        error_count: int = 0,
+    ) -> StoredBlueprintRunEvent:
+        with self._session_factory() as db:
+            run_event_model = BlueprintRunEventModel(
+                id=str(uuid4()),
+                blueprint_id=blueprint_id,
+                run_type=run_type,
+                section=section,
+                node_name=node_name,
+                phase=phase,
+                retry_count=retry_count,
+                route=route,
+                error_count=error_count,
+            )
+            db.add(run_event_model)
+            db.commit()
+            db.refresh(run_event_model)
+            return self._to_stored_run_event(run_event_model)
+
+    def list_run_events(self, blueprint_id: str, limit: int = 100) -> list[StoredBlueprintRunEvent]:
+        if not is_valid_uuid(blueprint_id):
+            return []
+
+        with self._session_factory() as db:
+            run_event_models = db.scalars(
+                select(BlueprintRunEventModel)
+                .where(BlueprintRunEventModel.blueprint_id == blueprint_id)
+                .order_by(BlueprintRunEventModel.created_at.asc())
+                .limit(limit)
+            ).all()
+
+            return [self._to_stored_run_event(run_event_model) for run_event_model in run_event_models]
 
     def save(
         self,
@@ -229,6 +339,7 @@ class PostgresBlueprintRepository(BlueprintRepository):
 
     def clear(self) -> None:
         with self._session_factory() as db:
+            db.execute(delete(BlueprintRunEventModel))
             db.execute(delete(BlueprintModel))
             db.commit()
 
@@ -244,6 +355,21 @@ class PostgresBlueprintRepository(BlueprintRepository):
             revision_instruction=blueprint_model.revision_instruction,
             result=normalize_blueprint_output(BlueprintResponse.model_validate(blueprint_model.result)),
             created_at=blueprint_model.created_at,
+        )
+
+    def _to_stored_run_event(self, run_event_model: BlueprintRunEventModel) -> StoredBlueprintRunEvent:
+        """ORM 실행 이력 모델을 API 응답에 쓰기 쉬운 내부 모델로 변환합니다."""
+        return StoredBlueprintRunEvent(
+            id=run_event_model.id,
+            blueprint_id=run_event_model.blueprint_id,
+            run_type=run_event_model.run_type,
+            section=run_event_model.section,
+            node_name=run_event_model.node_name,
+            phase=run_event_model.phase,
+            retry_count=run_event_model.retry_count,
+            route=run_event_model.route,
+            error_count=run_event_model.error_count,
+            created_at=run_event_model.created_at,
         )
 
 

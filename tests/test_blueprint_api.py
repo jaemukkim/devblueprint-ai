@@ -199,6 +199,44 @@ def test_get_blueprint_returns_saved_blueprint_detail(monkeypatch) -> None:
     assert data["result"] == create_response.json()
 
 
+def test_list_blueprint_run_events_returns_saved_events(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "use_openai", False)
+    blueprint_repository.clear()
+
+    client.post(
+        "/api/v1/blueprint/generate",
+        json={"idea": "그래프 실행 이력 조회를 확인하는 테스트 서비스"},
+    )
+    blueprint_id = client.get("/api/v1/blueprints").json()["items"][0]["id"]
+    blueprint_repository.record_run_event(
+        blueprint_id=blueprint_id,
+        run_type="blueprint_generation",
+        node_name="validate_blueprint",
+        phase="route",
+        retry_count=1,
+        route="complete",
+        error_count=0,
+    )
+
+    response = client.get(f"/api/v1/blueprints/{blueprint_id}/runs")
+
+    assert response.status_code == 200
+    items = response.json()["items"]
+    assert len(items) == 1
+    assert items[0]["blueprint_id"] == blueprint_id
+    assert items[0]["run_type"] == "blueprint_generation"
+    assert items[0]["node_name"] == "validate_blueprint"
+    assert items[0]["route"] == "complete"
+
+
+def test_list_blueprint_run_events_returns_404_when_missing() -> None:
+    blueprint_repository.clear()
+
+    response = client.get("/api/v1/blueprints/missing-blueprint-id/runs")
+
+    assert response.status_code == 404
+
+
 def test_get_blueprint_returns_404_when_missing() -> None:
     blueprint_repository.clear()
 
@@ -287,6 +325,44 @@ def test_regenerate_blueprint_section_returns_preview_without_saving(monkeypatch
     assert "일정을 더 현실적으로 조정해줘" in data["result"]["implementation_plan"][0]["description"]
     assert data["result"]["features"] == create_response.json()["features"]
     assert blueprint_repository.count() == 1
+
+
+def test_regenerate_blueprint_section_records_run_events(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "use_openai", False)
+    blueprint_repository.clear()
+
+    create_response = client.post(
+        "/api/v1/blueprint/generate",
+        json={"idea": "섹션 재생성 이력 저장을 확인하는 테스트 서비스"},
+    )
+    blueprint_id = client.get("/api/v1/blueprints").json()["items"][0]["id"]
+
+    def fake_regenerate_blueprint_section(idea, current_blueprint, section, instruction=None):
+        from app.services.blueprint_generator import log_langgraph_event
+
+        log_langgraph_event(
+            "section_regeneration",
+            "validate_selected_section",
+            "route",
+            retry_count=1,
+            route="complete",
+        )
+        return current_blueprint
+
+    monkeypatch.setattr(blueprint_api, "regenerate_blueprint_section", fake_regenerate_blueprint_section)
+
+    regenerate_response = client.post(f"/api/v1/blueprints/{blueprint_id}/sections/features/regenerate")
+    runs_response = client.get(f"/api/v1/blueprints/{blueprint_id}/runs")
+
+    assert create_response.status_code == 200
+    assert regenerate_response.status_code == 200
+    assert runs_response.status_code == 200
+    items = runs_response.json()["items"]
+    assert len(items) == 1
+    assert items[0]["run_type"] == "section_regeneration"
+    assert items[0]["section"] == "features"
+    assert items[0]["node_name"] == "validate_selected_section"
+    assert items[0]["route"] == "complete"
 
 
 def test_apply_regenerated_section_preview_saves_new_blueprint(monkeypatch) -> None:

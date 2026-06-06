@@ -1,4 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
+from contextvars import ContextVar, Token
 from dataclasses import dataclass
 from hashlib import sha256
 import logging
@@ -123,6 +124,37 @@ class SectionRegenerationState:
     retry_count: int = 0
 
 
+@dataclass
+class PendingBlueprintRunEvent:
+    """설계도 ID가 확정되기 전까지 임시로 모아두는 LangGraph 실행 이력입니다."""
+
+    node_name: str
+    phase: str
+    retry_count: int
+    route: str | None
+    error_count: int
+
+
+@dataclass
+class BlueprintRunContext:
+    """현재 요청에서 수집 중인 LangGraph 실행 이력 컨텍스트입니다."""
+
+    run_type: str
+    section: str | None = None
+    events: list[PendingBlueprintRunEvent] | None = None
+
+    def append(self, event: PendingBlueprintRunEvent) -> None:
+        if self.events is None:
+            self.events = []
+        self.events.append(event)
+
+
+active_blueprint_run_context: ContextVar[BlueprintRunContext | None] = ContextVar(
+    "active_blueprint_run_context",
+    default=None,
+)
+
+
 def generate_blueprint(payload: BlueprintRequest) -> BlueprintResponse:
     """서비스 아이디어를 받아 시스템 설계도 응답을 생성합니다."""
     cache_key = build_cache_key(payload.idea)
@@ -131,17 +163,22 @@ def generate_blueprint(payload: BlueprintRequest) -> BlueprintResponse:
     if cached_blueprint is not None:
         return cached_blueprint
 
-    # USE_OPENAI=false이면 API key가 있어도 실제 OpenAI 호출을 하지 않습니다.
-    # 개발 중 화면 확인이나 반복 테스트 시 불필요한 토큰 비용을 막기 위한 안전장치입니다.
-    if not settings.use_openai:
-        blueprint = build_placeholder_blueprint(payload)
-    else:
-        blueprint = generate_blueprint_pipeline_with_retry(payload)
+    run_token = start_blueprint_run("blueprint_generation")
+    try:
+        # USE_OPENAI=false이면 API key가 있어도 실제 OpenAI 호출을 하지 않습니다.
+        # 개발 중 화면 확인이나 반복 테스트 시 불필요한 토큰 비용을 막기 위한 안전장치입니다.
+        if not settings.use_openai:
+            blueprint = build_placeholder_blueprint(payload)
+        else:
+            blueprint = generate_blueprint_pipeline_with_retry(payload)
 
-    blueprint = normalize_blueprint_output(blueprint)
-    validate_blueprint_quality(blueprint)
-    blueprint_repository.save(cache_key, blueprint, idea=payload.idea.strip())
-    return blueprint
+        blueprint = normalize_blueprint_output(blueprint)
+        validate_blueprint_quality(blueprint)
+        stored_blueprint = blueprint_repository.save(cache_key, blueprint, idea=payload.idea.strip())
+        flush_blueprint_run_events(stored_blueprint.id)
+        return stored_blueprint.result
+    finally:
+        reset_blueprint_run(run_token)
 
 
 def revise_blueprint(idea: str, current_blueprint: BlueprintResponse, instruction: str) -> StoredBlueprint:
@@ -268,6 +305,46 @@ def log_langgraph_event(
         route or "-",
         len(errors or []),
     )
+    run_context = active_blueprint_run_context.get()
+    if run_context is not None:
+        run_context.append(
+            PendingBlueprintRunEvent(
+                node_name=node_name,
+                phase=phase,
+                retry_count=retry_count,
+                route=route,
+                error_count=len(errors or []),
+            )
+        )
+
+
+def start_blueprint_run(run_type: str, section: str | None = None) -> Token[BlueprintRunContext | None]:
+    """현재 요청에서 발생하는 LangGraph 실행 이력을 수집하기 시작합니다."""
+    return active_blueprint_run_context.set(BlueprintRunContext(run_type=run_type, section=section))
+
+
+def reset_blueprint_run(run_token: Token[BlueprintRunContext | None]) -> None:
+    """요청 처리가 끝나면 실행 이력 수집 컨텍스트를 원래대로 되돌립니다."""
+    active_blueprint_run_context.reset(run_token)
+
+
+def flush_blueprint_run_events(blueprint_id: str) -> None:
+    """수집된 LangGraph 실행 이력을 저장된 설계도 ID에 연결해 영구 저장합니다."""
+    run_context = active_blueprint_run_context.get()
+    if run_context is None or not run_context.events:
+        return
+
+    for event in run_context.events:
+        blueprint_repository.record_run_event(
+            blueprint_id=blueprint_id,
+            run_type=run_context.run_type,
+            section=run_context.section,
+            node_name=event.node_name,
+            phase=event.phase,
+            retry_count=event.retry_count,
+            route=event.route,
+            error_count=event.error_count,
+        )
 
 
 def build_section_regeneration_graph():

@@ -1,10 +1,12 @@
 from fastapi import APIRouter, HTTPException, Response, status
 
-from app.repositories.blueprint_repository import StoredBlueprint, blueprint_repository
+from app.repositories.blueprint_repository import StoredBlueprint, StoredBlueprintRunEvent, blueprint_repository
 from app.schemas.blueprint import (
     BlueprintListResponse,
     BlueprintRequest,
     BlueprintRevisionRequest,
+    BlueprintRunEventListResponse,
+    BlueprintRunEventResponse,
     BlueprintResponse,
     BlueprintSectionApplyRequest,
     BlueprintSectionRegenerationRequest,
@@ -16,10 +18,13 @@ from app.services.llm_client import BlueprintGenerationError
 from app.services.blueprint_generator import (
     DuplicateBlueprintRevisionError,
     apply_blueprint_section_preview,
+    flush_blueprint_run_events,
     generate_blueprint,
     normalize_section_name,
     regenerate_blueprint_section,
+    reset_blueprint_run,
     revise_blueprint,
+    start_blueprint_run,
 )
 
 
@@ -57,6 +62,19 @@ def get_blueprint(blueprint_id: str) -> StoredBlueprintResponse:
         revision_instruction=stored_blueprint.revision_instruction,
         created_at=stored_blueprint.created_at,
         result=stored_blueprint.result,
+    )
+
+
+@blueprints_router.get("/{blueprint_id}/runs", response_model=BlueprintRunEventListResponse)
+def list_blueprint_run_events(blueprint_id: str) -> BlueprintRunEventListResponse:
+    stored_blueprint = blueprint_repository.get_by_id(blueprint_id)
+
+    if stored_blueprint is None:
+        raise build_not_found_error("실행 이력을 조회할 설계도를 찾을 수 없습니다.")
+
+    run_events = blueprint_repository.list_run_events(blueprint_id)
+    return BlueprintRunEventListResponse(
+        items=[to_blueprint_run_event_response(run_event) for run_event in run_events]
     )
 
 
@@ -102,6 +120,8 @@ def regenerate_stored_blueprint_section(
     if stored_blueprint is None:
         raise build_not_found_error("재생성할 설계도를 찾을 수 없습니다.")
 
+    normalized_section = normalize_section_name(section)
+    run_token = start_blueprint_run("section_regeneration", normalized_section)
     try:
         regenerated_blueprint = regenerate_blueprint_section(
             stored_blueprint.idea,
@@ -109,14 +129,19 @@ def regenerate_stored_blueprint_section(
             section,
             payload.instruction if payload else None,
         )
+        flush_blueprint_run_events(stored_blueprint.id)
     except ValueError as exc:
+        flush_blueprint_run_events(stored_blueprint.id)
         raise build_not_found_error(str(exc), "unsupported_section") from exc
     except BlueprintGenerationError as exc:
         # 부분 재생성도 전체 설계 품질 검증을 통과해야 preview로 사용할 수 있습니다.
+        flush_blueprint_run_events(stored_blueprint.id)
         raise build_generation_http_error(exc) from exc
+    finally:
+        reset_blueprint_run(run_token)
 
     return BlueprintSectionRegenerationResponse(
-        section=normalize_section_name(section),
+        section=normalized_section,
         result=regenerated_blueprint,
     )
 
@@ -174,6 +199,22 @@ def to_blueprint_summary(stored_blueprint: StoredBlueprint) -> BlueprintSummary:
         idea=stored_blueprint.idea,
         revision_instruction=stored_blueprint.revision_instruction,
         created_at=stored_blueprint.created_at,
+    )
+
+
+def to_blueprint_run_event_response(run_event: StoredBlueprintRunEvent) -> BlueprintRunEventResponse:
+    """저장된 실행 이력을 API 응답 모델로 변환합니다."""
+    return BlueprintRunEventResponse(
+        id=run_event.id,
+        blueprint_id=run_event.blueprint_id,
+        run_type=run_event.run_type,
+        section=run_event.section,
+        node_name=run_event.node_name,
+        phase=run_event.phase,
+        retry_count=run_event.retry_count,
+        route=run_event.route,
+        error_count=run_event.error_count,
+        created_at=run_event.created_at,
     )
 
 
