@@ -1,4 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 from hashlib import sha256
 
 from app.core.config import settings
@@ -44,12 +45,22 @@ from app.services.prompts import (
     build_planning_design_prompt,
     build_section_regeneration_prompt,
 )
+from langgraph.graph import END, START, StateGraph
 
 
 MAX_OPENAI_GENERATION_ATTEMPTS = 3
 # 섹션별 생성은 비용이 크므로 전체 재시도는 최소한만 허용하되, 품질 피드백을 한 번은 반영할 수 있게 둡니다.
 MAX_OPENAI_PIPELINE_ATTEMPTS = 2
 REGENERATABLE_SECTIONS = {"features", "api", "database", "diagrams", "planning"}
+BLUEPRINT_PIPELINE_STEPS = (
+    "analyze_idea",
+    "design_features",
+    "design_api",
+    "design_database",
+    "design_diagrams",
+    "design_planning",
+    "assemble_blueprint",
+)
 REVISION_MARKER = "수정:"
 REVISION_STOPWORDS = {
     "같은",
@@ -70,6 +81,26 @@ REVISION_STOPWORDS = {
 
 class DuplicateBlueprintRevisionError(RuntimeError):
     """이미 반영된 수정 요청을 다시 생성하지 않도록 알려주는 예외입니다."""
+
+
+@dataclass
+class BlueprintPipelineState:
+    """LangGraph 전환을 염두에 둔 설계도 생성 파이프라인 상태입니다."""
+
+    payload: BlueprintRequest
+    validation_feedback: list[str] | None = None
+    analysis: IdeaAnalysis | None = None
+    feature_design: FeatureDesign | None = None
+    api_design: ApiDesign | None = None
+    database_design: DatabaseDesign | None = None
+    diagram_design: DiagramDesign | None = None
+    planning_design: PlanningDesign | None = None
+    blueprint: BlueprintResponse | None = None
+
+    @property
+    def idea(self) -> str:
+        """프롬프트 단계에서 반복 사용하는 정규화된 아이디어 문장입니다."""
+        return self.payload.idea.strip()
 
 
 def generate_blueprint(payload: BlueprintRequest) -> BlueprintResponse:
@@ -409,38 +440,191 @@ def generate_blueprint_pipeline(
     validation_feedback: list[str] | None = None,
 ) -> BlueprintResponse:
     """서비스 분석부터 계획까지 작은 structured output 단계로 나누어 설계도를 생성합니다."""
-    idea = payload.idea.strip()
+    state = BlueprintPipelineState(payload=payload, validation_feedback=validation_feedback)
+    graph_result = build_blueprint_pipeline_graph().invoke(state)
+    blueprint = graph_result.get("blueprint")
 
-    analysis = request_structured_output_from_openai(
-        build_idea_analysis_prompt(payload),
+    if blueprint is None:
+        raise BlueprintGenerationError("설계도 생성 파이프라인이 최종 결과를 만들지 못했습니다.")
+
+    return blueprint
+
+
+def build_blueprint_pipeline_graph():
+    """LangGraph 기반 설계도 생성 그래프를 구성합니다."""
+    graph = StateGraph(BlueprintPipelineState)
+
+    graph.add_node("analyze_idea", analyze_idea_node)
+    graph.add_node("design_features", design_features_node)
+    graph.add_node("design_api", design_api_node)
+    graph.add_node("design_database", design_database_node)
+    graph.add_node("design_diagrams", design_diagrams_node)
+    graph.add_node("design_planning", design_planning_node)
+    graph.add_node("assemble_blueprint", assemble_blueprint_node)
+
+    graph.add_edge(START, "analyze_idea")
+    graph.add_edge("analyze_idea", "design_features")
+    graph.add_edge("design_features", "design_api")
+    graph.add_edge("design_api", "design_database")
+    graph.add_edge("design_database", "design_diagrams")
+    graph.add_edge("design_database", "design_planning")
+    graph.add_edge(["design_diagrams", "design_planning"], "assemble_blueprint")
+    graph.add_edge("assemble_blueprint", END)
+
+    return graph.compile()
+
+
+def analyze_idea_node(state: BlueprintPipelineState) -> dict:
+    """LangGraph 아이디어 분석 노드입니다."""
+    return {"analysis": analyze_idea_step(state).analysis}
+
+
+def design_features_node(state: BlueprintPipelineState) -> dict:
+    """LangGraph 기능 설계 노드입니다."""
+    return {"feature_design": design_features_step(state).feature_design}
+
+
+def design_api_node(state: BlueprintPipelineState) -> dict:
+    """LangGraph API 설계 노드입니다."""
+    return {"api_design": design_api_step(state).api_design}
+
+
+def design_database_node(state: BlueprintPipelineState) -> dict:
+    """LangGraph DB 설계 노드입니다."""
+    return {"database_design": design_database_step(state).database_design}
+
+
+def design_diagrams_node(state: BlueprintPipelineState) -> dict:
+    """LangGraph 다이어그램 설계 노드입니다."""
+    if state.analysis is None or state.api_design is None or state.database_design is None:
+        raise BlueprintGenerationError("다이어그램 설계 전에 분석, API, DB 설계 결과가 필요합니다.")
+
+    diagram_design = request_structured_output_from_openai(
+        build_diagram_design_prompt(state.idea, state.analysis, state.api_design, state.database_design),
+        DiagramDesign,
+        validation_feedback=state.validation_feedback,
+    )
+    return {"diagram_design": diagram_design}
+
+
+def design_planning_node(state: BlueprintPipelineState) -> dict:
+    """LangGraph 계획 설계 노드입니다."""
+    if (
+        state.analysis is None
+        or state.feature_design is None
+        or state.api_design is None
+        or state.database_design is None
+    ):
+        raise BlueprintGenerationError("계획 설계 전에 분석, 기능, API, DB 설계 결과가 필요합니다.")
+
+    planning_design = request_structured_output_from_openai(
+        build_planning_design_prompt(
+            state.idea,
+            state.analysis,
+            state.feature_design,
+            state.api_design,
+            state.database_design,
+        ),
+        PlanningDesign,
+        validation_feedback=state.validation_feedback,
+    )
+    return {"planning_design": planning_design}
+
+
+def assemble_blueprint_node(state: BlueprintPipelineState) -> dict:
+    """LangGraph 최종 조립 노드입니다."""
+    return {"blueprint": assemble_blueprint_step(state).blueprint}
+
+
+def analyze_idea_step(state: BlueprintPipelineState) -> BlueprintPipelineState:
+    """아이디어 분석 노드 후보입니다."""
+    state.analysis = request_structured_output_from_openai(
+        build_idea_analysis_prompt(state.payload),
         IdeaAnalysis,
-        validation_feedback=validation_feedback,
+        validation_feedback=state.validation_feedback,
     )
-    feature_design = request_structured_output_from_openai(
-        build_feature_design_prompt(idea, analysis),
-        FeatureDesign,
-        validation_feedback=validation_feedback,
-    )
-    api_design = request_structured_output_from_openai(
-        build_api_design_prompt(idea, analysis, feature_design),
-        ApiDesign,
-        validation_feedback=validation_feedback,
-    )
-    database_design = request_structured_output_from_openai(
-        build_database_design_prompt(idea, analysis, feature_design, api_design),
-        DatabaseDesign,
-        validation_feedback=validation_feedback,
-    )
-    diagram_design, planning_design = generate_final_blueprint_sections(
-        idea,
-        analysis,
-        feature_design,
-        api_design,
-        database_design,
-        validation_feedback,
-    )
+    return state
 
-    return assemble_blueprint(feature_design, api_design, database_design, diagram_design, planning_design)
+
+def design_features_step(state: BlueprintPipelineState) -> BlueprintPipelineState:
+    """기능과 기술 스택 설계 노드 후보입니다."""
+    if state.analysis is None:
+        raise BlueprintGenerationError("기능 설계 전에 아이디어 분석 결과가 필요합니다.")
+
+    state.feature_design = request_structured_output_from_openai(
+        build_feature_design_prompt(state.idea, state.analysis),
+        FeatureDesign,
+        validation_feedback=state.validation_feedback,
+    )
+    return state
+
+
+def design_api_step(state: BlueprintPipelineState) -> BlueprintPipelineState:
+    """API 설계 노드 후보입니다."""
+    if state.analysis is None or state.feature_design is None:
+        raise BlueprintGenerationError("API 설계 전에 아이디어 분석과 기능 설계 결과가 필요합니다.")
+
+    state.api_design = request_structured_output_from_openai(
+        build_api_design_prompt(state.idea, state.analysis, state.feature_design),
+        ApiDesign,
+        validation_feedback=state.validation_feedback,
+    )
+    return state
+
+
+def design_database_step(state: BlueprintPipelineState) -> BlueprintPipelineState:
+    """DB 설계 노드 후보입니다."""
+    if state.analysis is None or state.feature_design is None or state.api_design is None:
+        raise BlueprintGenerationError("DB 설계 전에 아이디어 분석, 기능 설계, API 설계 결과가 필요합니다.")
+
+    state.database_design = request_structured_output_from_openai(
+        build_database_design_prompt(state.idea, state.analysis, state.feature_design, state.api_design),
+        DatabaseDesign,
+        validation_feedback=state.validation_feedback,
+    )
+    return state
+
+
+def design_final_sections_step(state: BlueprintPipelineState) -> BlueprintPipelineState:
+    """다이어그램과 계획을 병렬 생성하는 노드 후보입니다."""
+    if (
+        state.analysis is None
+        or state.feature_design is None
+        or state.api_design is None
+        or state.database_design is None
+    ):
+        raise BlueprintGenerationError("최종 섹션 설계 전에 분석, 기능, API, DB 설계 결과가 필요합니다.")
+
+    state.diagram_design, state.planning_design = generate_final_blueprint_sections(
+        state.idea,
+        state.analysis,
+        state.feature_design,
+        state.api_design,
+        state.database_design,
+        state.validation_feedback,
+    )
+    return state
+
+
+def assemble_blueprint_step(state: BlueprintPipelineState) -> BlueprintPipelineState:
+    """섹션별 산출물을 최종 BlueprintResponse로 조립하는 노드 후보입니다."""
+    if (
+        state.feature_design is None
+        or state.api_design is None
+        or state.database_design is None
+        or state.diagram_design is None
+        or state.planning_design is None
+    ):
+        raise BlueprintGenerationError("설계도 조립 전에 모든 섹션 생성 결과가 필요합니다.")
+
+    state.blueprint = assemble_blueprint(
+        state.feature_design,
+        state.api_design,
+        state.database_design,
+        state.diagram_design,
+        state.planning_design,
+    )
+    return state
 
 
 def generate_final_blueprint_sections(

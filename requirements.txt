@@ -9,6 +9,7 @@ python-dotenv
 
 # AI 연동
 openai
+langgraph
 
 # 프론트엔드 MVP
 streamlit

@@ -19,6 +19,13 @@ from app.schemas.blueprint import (
 )
 from app.schemas.blueprint import BlueprintRequest
 from app.services.blueprint_generator import (
+    BLUEPRINT_PIPELINE_STEPS,
+    BlueprintPipelineState,
+    analyze_idea_step,
+    assemble_blueprint_step,
+    design_api_step,
+    design_database_step,
+    design_features_step,
     generate_blueprint_pipeline_with_retry,
     generate_blueprint_with_retry,
     regenerate_blueprint_section_with_retry,
@@ -233,6 +240,69 @@ def test_generate_blueprint_pipeline_assembles_section_outputs(monkeypatch) -> N
         DiagramDesign,
         PlanningDesign,
     }
+
+
+def test_blueprint_pipeline_steps_are_named_for_graph_migration() -> None:
+    assert BLUEPRINT_PIPELINE_STEPS == (
+        "analyze_idea",
+        "design_features",
+        "design_api",
+        "design_database",
+        "design_diagrams",
+        "design_planning",
+        "assemble_blueprint",
+    )
+
+
+def test_blueprint_pipeline_state_steps_pass_outputs_forward(monkeypatch) -> None:
+    blueprint = make_blueprint()
+    outputs = {
+        IdeaAnalysis: IdeaAnalysis(
+            service_summary="독서 기록 서비스입니다.",
+            target_users=["독서 사용자"],
+            core_entities=["books", "reading_logs"],
+            mvp_scope=["독서 기록"],
+            out_of_scope=["결제"],
+        ),
+        FeatureDesign: FeatureDesign(
+            overview=blueprint.overview,
+            features=blueprint.features,
+            tech_stack=blueprint.tech_stack,
+        ),
+        ApiDesign: ApiDesign(api_spec=blueprint.api_spec),
+        DatabaseDesign: DatabaseDesign(database_schema=blueprint.database_schema),
+    }
+
+    def fake_request_structured_output(user_prompt, text_format, validation_feedback=None):
+        return outputs[text_format]
+
+    monkeypatch.setattr(
+        "app.services.blueprint_generator.request_structured_output_from_openai",
+        fake_request_structured_output,
+    )
+
+    state = BlueprintPipelineState(payload=BlueprintRequest(idea="독서 기록 서비스"))
+    state = analyze_idea_step(state)
+    state = design_features_step(state)
+    state = design_api_step(state)
+    state = design_database_step(state)
+    state.diagram_design = DiagramDesign(
+        database_erd=blueprint.database_erd,
+        sequence_diagram=blueprint.sequence_diagram,
+    )
+    state.planning_design = PlanningDesign(
+        non_functional_requirements=blueprint.non_functional_requirements,
+        security_considerations=blueprint.security_considerations,
+        implementation_plan=blueprint.implementation_plan,
+    )
+    state = assemble_blueprint_step(state)
+
+    assert state.analysis is outputs[IdeaAnalysis]
+    assert state.feature_design is outputs[FeatureDesign]
+    assert state.api_design is outputs[ApiDesign]
+    assert state.database_design is outputs[DatabaseDesign]
+    assert state.blueprint is not None
+    assert state.blueprint.api_spec[0].path == "/api/v1/books"
 
 
 def test_generate_blueprint_pipeline_retries_with_validation_feedback(monkeypatch) -> None:
