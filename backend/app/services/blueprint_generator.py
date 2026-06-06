@@ -27,7 +27,7 @@ from app.services.blueprint_validator import (
     collect_blueprint_section_quality_errors,
     validate_blueprint_quality,
 )
-from app.services.blueprint_feedback import build_quality_feedback
+from app.services.blueprint_feedback import build_quality_feedback, choose_quality_retry_section
 from app.services.blueprint_normalizer import normalize_blueprint_output
 from app.services.llm_client import (
     BlueprintGenerationError,
@@ -96,6 +96,9 @@ class BlueprintPipelineState:
     diagram_design: DiagramDesign | None = None
     planning_design: PlanningDesign | None = None
     blueprint: BlueprintResponse | None = None
+    validation_errors: list[str] | None = None
+    retry_count: int = 0
+    next_route: str = "complete"
 
     @property
     def idea(self) -> str:
@@ -461,6 +464,14 @@ def build_blueprint_pipeline_graph():
     graph.add_node("design_diagrams", design_diagrams_node)
     graph.add_node("design_planning", design_planning_node)
     graph.add_node("assemble_blueprint", assemble_blueprint_node)
+    graph.add_node("validate_blueprint", validate_blueprint_node)
+    graph.add_node("retry_design_features", design_features_node)
+    graph.add_node("retry_design_api", design_api_node)
+    graph.add_node("retry_design_database", design_database_node)
+    graph.add_node("retry_design_final_sections", design_final_sections_node)
+    graph.add_node("retry_design_diagrams", design_diagrams_node)
+    graph.add_node("retry_design_planning", design_planning_node)
+    graph.add_node("fail_validation", fail_validation_node)
 
     graph.add_edge(START, "analyze_idea")
     graph.add_edge("analyze_idea", "design_features")
@@ -469,7 +480,27 @@ def build_blueprint_pipeline_graph():
     graph.add_edge("design_database", "design_diagrams")
     graph.add_edge("design_database", "design_planning")
     graph.add_edge(["design_diagrams", "design_planning"], "assemble_blueprint")
-    graph.add_edge("assemble_blueprint", END)
+    graph.add_edge("assemble_blueprint", "validate_blueprint")
+    graph.add_conditional_edges(
+        "validate_blueprint",
+        route_validation_feedback,
+        {
+            "complete": END,
+            "features": "retry_design_features",
+            "api": "retry_design_api",
+            "database": "retry_design_database",
+            "diagrams": "retry_design_diagrams",
+            "planning": "retry_design_planning",
+            "fail": "fail_validation",
+        },
+    )
+    graph.add_edge("retry_design_features", "retry_design_api")
+    graph.add_edge("retry_design_api", "retry_design_database")
+    graph.add_edge("retry_design_database", "retry_design_final_sections")
+    graph.add_edge("retry_design_final_sections", "assemble_blueprint")
+    graph.add_edge("retry_design_diagrams", "assemble_blueprint")
+    graph.add_edge("retry_design_planning", "assemble_blueprint")
+    graph.add_edge("fail_validation", END)
 
     return graph.compile()
 
@@ -534,6 +565,51 @@ def design_planning_node(state: BlueprintPipelineState) -> dict:
 def assemble_blueprint_node(state: BlueprintPipelineState) -> dict:
     """LangGraph 최종 조립 노드입니다."""
     return {"blueprint": assemble_blueprint_step(state).blueprint}
+
+
+def validate_blueprint_node(state: BlueprintPipelineState) -> dict:
+    """LangGraph 검증 노드입니다."""
+    if state.blueprint is None:
+        raise BlueprintGenerationError("검증 전에 최종 설계도 결과가 필요합니다.")
+
+    errors = collect_blueprint_quality_errors(state.blueprint)
+    if not errors:
+        return {
+            "validation_errors": [],
+            "next_route": "complete",
+        }
+
+    next_route = choose_quality_retry_section(errors)
+    return {
+        "validation_errors": errors,
+        "validation_feedback": build_quality_feedback(errors, next_route),
+        "retry_count": state.retry_count + 1,
+        "next_route": next_route,
+    }
+
+
+def route_validation_feedback(state: BlueprintPipelineState) -> str:
+    """검증 결과에 따라 완료, 실패, 또는 필요한 재생성 섹션으로 분기합니다."""
+    if not state.validation_errors:
+        return "complete"
+    if state.retry_count >= MAX_OPENAI_PIPELINE_ATTEMPTS:
+        return "fail"
+    return state.next_route
+
+
+def fail_validation_node(state: BlueprintPipelineState) -> dict:
+    """조건부 재시도 한도를 넘긴 검증 실패를 생성 오류로 변환합니다."""
+    joined_errors = "; ".join(state.validation_errors or [])
+    raise BlueprintGenerationError(f"섹션별 설계도 품질 검증 재시도에 실패했습니다: {joined_errors}")
+
+
+def design_final_sections_node(state: BlueprintPipelineState) -> dict:
+    """retry 경로에서 다이어그램과 계획을 함께 다시 생성합니다."""
+    updated_state = design_final_sections_step(state)
+    return {
+        "diagram_design": updated_state.diagram_design,
+        "planning_design": updated_state.planning_design,
+    }
 
 
 def analyze_idea_step(state: BlueprintPipelineState) -> BlueprintPipelineState:

@@ -9,10 +9,38 @@ SECTION_FEEDBACK_PREFIX = {
     "planning": "계획 섹션",
 }
 
+QUALITY_ERROR_SECTION_RULES = (
+    ("features", ("features", "feature ")),
+    ("api", ("api_", "api ", "api path", "api endpoint", "api field")),
+    ("database", ("database_schema", "table ", "column ", "primary_key", "database columns", "api resource")),
+    ("diagrams", ("database_erd", "sequence_diagram", "Mermaid")),
+    ("planning", ("non_functional_requirements", "security_considerations", "implementation_plan")),
+)
+
 
 def build_quality_feedback(errors: list[str], section: str | None = None) -> list[str]:
     """validator 오류를 LLM이 수정 방향으로 바로 이해할 수 있는 피드백으로 바꿉니다."""
     return [build_single_quality_feedback(error, section) for error in errors]
+
+
+def classify_quality_error_section(error: str) -> str:
+    """validator 오류가 어느 설계 섹션에 가까운지 분류합니다."""
+    for section, patterns in QUALITY_ERROR_SECTION_RULES:
+        if any(pattern in error for pattern in patterns):
+            return section
+    return "planning"
+
+
+def choose_quality_retry_section(errors: list[str]) -> str:
+    """의존성 순서상 가장 앞에서 다시 생성해야 하는 섹션을 고릅니다."""
+    section_priority = ["features", "api", "database", "diagrams", "planning"]
+    sections = {classify_quality_error_section(error) for error in errors}
+
+    for section in section_priority:
+        if section in sections:
+            return section
+
+    return "planning"
 
 
 def build_single_quality_feedback(error: str, section: str | None = None) -> str:

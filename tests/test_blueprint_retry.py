@@ -153,6 +153,10 @@ def make_implementation_plan() -> list[ImplementationStep]:
     ]
 
 
+def count_calls(call_formats: list[tuple[type, list[str] | None]], text_format: type) -> int:
+    return sum(1 for called_format, _ in call_formats if called_format is text_format)
+
+
 def test_generate_blueprint_with_retry_returns_second_valid_result(monkeypatch) -> None:
     responses = [make_blueprint(api_path="api/v1/items"), make_blueprint()]
     feedback_calls = []
@@ -379,6 +383,129 @@ def test_generate_blueprint_pipeline_retries_with_validation_feedback(monkeypatc
     assert result.database_schema[0].columns[0].constraints == ["primary_key"]
     assert any("primary_key 컬럼" in " ".join(feedback) for feedback in feedback_values)
     assert any("최소 3개 컬럼" in " ".join(feedback) for feedback in feedback_values)
+
+
+def test_langgraph_retry_routes_api_errors_to_api_and_downstream_nodes(monkeypatch) -> None:
+    valid_blueprint = make_blueprint()
+    invalid_api_design = ApiDesign(
+        api_spec=[
+            make_api_spec("POST", "api/v1/items"),
+            *valid_blueprint.api_spec[1:],
+        ]
+    )
+    call_formats = []
+
+    def fake_request_structured_output(user_prompt, text_format, validation_feedback=None):
+        call_formats.append((text_format, validation_feedback))
+        if text_format is IdeaAnalysis:
+            return IdeaAnalysis(
+                service_summary="독서 기록 서비스입니다.",
+                target_users=["독서 사용자"],
+                core_entities=["books", "reading_logs"],
+                mvp_scope=["독서 기록"],
+                out_of_scope=["결제"],
+            )
+        if text_format is FeatureDesign:
+            return FeatureDesign(
+                overview=valid_blueprint.overview,
+                features=valid_blueprint.features,
+                tech_stack=valid_blueprint.tech_stack,
+            )
+        if text_format is ApiDesign:
+            if validation_feedback:
+                return ApiDesign(api_spec=valid_blueprint.api_spec)
+            return invalid_api_design
+        if text_format is DatabaseDesign:
+            return DatabaseDesign(database_schema=valid_blueprint.database_schema)
+        if text_format is DiagramDesign:
+            return DiagramDesign(
+                database_erd=valid_blueprint.database_erd,
+                sequence_diagram=valid_blueprint.sequence_diagram,
+            )
+        if text_format is PlanningDesign:
+            return PlanningDesign(
+                non_functional_requirements=make_design_considerations("reliability"),
+                security_considerations=make_design_considerations("security"),
+                implementation_plan=make_implementation_plan(),
+            )
+        raise AssertionError(f"unexpected text_format: {text_format}")
+
+    monkeypatch.setattr(
+        "app.services.blueprint_generator.request_structured_output_from_openai",
+        fake_request_structured_output,
+    )
+
+    result = generate_blueprint_pipeline_with_retry(BlueprintRequest(idea="독서 기록 서비스"))
+
+    assert result.api_spec[0].path == "/api/v1/books"
+    assert count_calls(call_formats, IdeaAnalysis) == 1
+    assert count_calls(call_formats, FeatureDesign) == 1
+    assert count_calls(call_formats, ApiDesign) == 2
+    assert count_calls(call_formats, DatabaseDesign) == 2
+    assert count_calls(call_formats, DiagramDesign) == 2
+    assert count_calls(call_formats, PlanningDesign) == 2
+    assert any(
+        text_format is ApiDesign and validation_feedback and "API path" in " ".join(validation_feedback)
+        for text_format, validation_feedback in call_formats
+    )
+
+
+def test_langgraph_retry_routes_diagram_errors_to_diagram_node_only(monkeypatch) -> None:
+    valid_blueprint = make_blueprint()
+    call_formats = []
+
+    def fake_request_structured_output(user_prompt, text_format, validation_feedback=None):
+        call_formats.append((text_format, validation_feedback))
+        if text_format is IdeaAnalysis:
+            return IdeaAnalysis(
+                service_summary="독서 기록 서비스입니다.",
+                target_users=["독서 사용자"],
+                core_entities=["books", "reading_logs"],
+                mvp_scope=["독서 기록"],
+                out_of_scope=["결제"],
+            )
+        if text_format is FeatureDesign:
+            return FeatureDesign(
+                overview=valid_blueprint.overview,
+                features=valid_blueprint.features,
+                tech_stack=valid_blueprint.tech_stack,
+            )
+        if text_format is ApiDesign:
+            return ApiDesign(api_spec=valid_blueprint.api_spec)
+        if text_format is DatabaseDesign:
+            return DatabaseDesign(database_schema=valid_blueprint.database_schema)
+        if text_format is DiagramDesign:
+            if validation_feedback:
+                return DiagramDesign(
+                    database_erd=valid_blueprint.database_erd,
+                    sequence_diagram=valid_blueprint.sequence_diagram,
+                )
+            return DiagramDesign(
+                database_erd="broken erd",
+                sequence_diagram=valid_blueprint.sequence_diagram,
+            )
+        if text_format is PlanningDesign:
+            return PlanningDesign(
+                non_functional_requirements=make_design_considerations("reliability"),
+                security_considerations=make_design_considerations("security"),
+                implementation_plan=make_implementation_plan(),
+            )
+        raise AssertionError(f"unexpected text_format: {text_format}")
+
+    monkeypatch.setattr(
+        "app.services.blueprint_generator.request_structured_output_from_openai",
+        fake_request_structured_output,
+    )
+
+    result = generate_blueprint_pipeline_with_retry(BlueprintRequest(idea="독서 기록 서비스"))
+
+    assert result.database_erd.startswith("erDiagram")
+    assert count_calls(call_formats, IdeaAnalysis) == 1
+    assert count_calls(call_formats, FeatureDesign) == 1
+    assert count_calls(call_formats, ApiDesign) == 1
+    assert count_calls(call_formats, DatabaseDesign) == 1
+    assert count_calls(call_formats, DiagramDesign) == 2
+    assert count_calls(call_formats, PlanningDesign) == 1
 
 
 def test_regenerate_feature_section_adds_requested_feature_when_llm_omits_it(monkeypatch) -> None:
