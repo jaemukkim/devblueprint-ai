@@ -1,3 +1,5 @@
+import logging
+
 import pytest
 
 from app.schemas.blueprint import (
@@ -385,7 +387,7 @@ def test_generate_blueprint_pipeline_retries_with_validation_feedback(monkeypatc
     assert any("최소 3개 컬럼" in " ".join(feedback) for feedback in feedback_values)
 
 
-def test_langgraph_retry_routes_api_errors_to_api_and_downstream_nodes(monkeypatch) -> None:
+def test_langgraph_retry_routes_api_errors_to_api_and_downstream_nodes(monkeypatch, caplog) -> None:
     valid_blueprint = make_blueprint()
     invalid_api_design = ApiDesign(
         api_spec=[
@@ -394,6 +396,7 @@ def test_langgraph_retry_routes_api_errors_to_api_and_downstream_nodes(monkeypat
         ]
     )
     call_formats = []
+    caplog.set_level(logging.INFO, logger="app.services.blueprint_generator")
 
     def fake_request_structured_output(user_prompt, text_format, validation_feedback=None):
         call_formats.append((text_format, validation_feedback))
@@ -448,6 +451,8 @@ def test_langgraph_retry_routes_api_errors_to_api_and_downstream_nodes(monkeypat
         text_format is ApiDesign and validation_feedback and "API path" in " ".join(validation_feedback)
         for text_format, validation_feedback in call_formats
     )
+    assert "langgraph graph=blueprint_pipeline node=validate_blueprint phase=route retry=1 route=api" in caplog.text
+    assert "langgraph graph=blueprint_pipeline node=design_api phase=start retry=1" in caplog.text
 
 
 def test_langgraph_retry_routes_diagram_errors_to_diagram_node_only(monkeypatch) -> None:
@@ -610,6 +615,36 @@ def test_regenerate_feature_section_retries_with_friendly_feedback(monkeypatch) 
     assert feedback_calls[0] is None
     assert any("기능 섹션" in feedback for feedback in feedback_calls[1])
     assert any("5~8개의 구체적인 MVP 기능" in feedback for feedback in feedback_calls[1])
+
+
+def test_section_regeneration_graph_fails_after_retry_limit(monkeypatch, caplog) -> None:
+    current_blueprint = make_blueprint()
+    invalid_api_design = ApiDesign(api_spec=[make_api_spec("POST", "api/v1/items")])
+    feedback_calls = []
+    caplog.set_level(logging.INFO, logger="app.services.blueprint_generator")
+
+    def fake_request_structured_output(user_prompt, text_format, validation_feedback=None):
+        feedback_calls.append(validation_feedback)
+        return invalid_api_design
+
+    monkeypatch.setattr(
+        "app.services.blueprint_generator.request_structured_output_from_openai",
+        fake_request_structured_output,
+    )
+
+    with pytest.raises(BlueprintGenerationError, match="섹션 재생성 품질 검증 재시도에 실패"):
+        regenerate_blueprint_section_with_retry(
+            "독서 기록 서비스",
+            current_blueprint,
+            "api",
+            None,
+        )
+
+    assert len(feedback_calls) == 3
+    assert feedback_calls[0] is None
+    assert feedback_calls[1] is not None
+    assert "langgraph graph=section_regeneration node=validate_selected_section phase=route retry=3 route=fail" in caplog.text
+    assert "langgraph graph=section_regeneration node=fail_section_regeneration phase=failed retry=3 route=api" in caplog.text
 
 
 def test_regenerate_feature_section_does_not_duplicate_similar_feature(monkeypatch) -> None:

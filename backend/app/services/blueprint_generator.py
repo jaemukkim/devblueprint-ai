@@ -1,6 +1,7 @@
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from hashlib import sha256
+import logging
 
 from app.core.config import settings
 from app.repositories.blueprint_repository import StoredBlueprint, blueprint_repository
@@ -47,6 +48,8 @@ from app.services.prompts import (
 )
 from langgraph.graph import END, START, StateGraph
 
+
+logger = logging.getLogger(__name__)
 
 MAX_OPENAI_GENERATION_ATTEMPTS = 3
 # 섹션별 생성은 비용이 크므로 전체 재시도는 최소한만 허용하되, 품질 피드백을 한 번은 반영할 수 있게 둡니다.
@@ -247,6 +250,26 @@ def regenerate_blueprint_section_with_retry(
     return blueprint
 
 
+def log_langgraph_event(
+    graph_name: str,
+    node_name: str,
+    phase: str,
+    retry_count: int = 0,
+    route: str | None = None,
+    errors: list[str] | None = None,
+) -> None:
+    """LangGraph 실행 흐름을 서버 로그에서 추적할 수 있게 기록합니다."""
+    logger.info(
+        "langgraph graph=%s node=%s phase=%s retry=%s route=%s errors=%s",
+        graph_name,
+        node_name,
+        phase,
+        retry_count,
+        route or "-",
+        len(errors or []),
+    )
+
+
 def build_section_regeneration_graph():
     """섹션 재생성 전용 LangGraph를 구성합니다."""
     graph = StateGraph(SectionRegenerationState)
@@ -272,6 +295,13 @@ def build_section_regeneration_graph():
 
 def regenerate_selected_section_node(state: SectionRegenerationState) -> dict:
     """선택된 섹션만 다시 생성하고 전체 설계도 형태로 합칩니다."""
+    log_langgraph_event(
+        "section_regeneration",
+        "regenerate_selected_section",
+        "start",
+        retry_count=state.retry_count,
+        route=state.section,
+    )
     blueprint = normalize_blueprint_output(
         regenerate_blueprint_section_once(
             state.idea,
@@ -298,6 +328,14 @@ def validate_selected_section_node(state: SectionRegenerationState) -> dict:
             state.instruction,
         ),
     ]
+    log_langgraph_event(
+        "section_regeneration",
+        "validate_selected_section",
+        "validated",
+        retry_count=state.retry_count,
+        route=state.section,
+        errors=errors,
+    )
     if not errors:
         return {"validation_errors": []}
 
@@ -311,14 +349,45 @@ def validate_selected_section_node(state: SectionRegenerationState) -> dict:
 def route_section_regeneration(state: SectionRegenerationState) -> str:
     """검증 결과에 따라 완료, 재시도, 실패 경로를 고릅니다."""
     if not state.validation_errors:
+        log_langgraph_event(
+            "section_regeneration",
+            "validate_selected_section",
+            "route",
+            retry_count=state.retry_count,
+            route="complete",
+        )
         return "complete"
     if state.retry_count >= MAX_OPENAI_GENERATION_ATTEMPTS:
+        log_langgraph_event(
+            "section_regeneration",
+            "validate_selected_section",
+            "route",
+            retry_count=state.retry_count,
+            route="fail",
+            errors=state.validation_errors,
+        )
         return "fail"
+    log_langgraph_event(
+        "section_regeneration",
+        "validate_selected_section",
+        "route",
+        retry_count=state.retry_count,
+        route="retry",
+        errors=state.validation_errors,
+    )
     return "retry"
 
 
 def fail_section_regeneration_node(state: SectionRegenerationState) -> dict:
     """재시도 한도를 넘은 섹션 재생성 오류를 사용자에게 전달합니다."""
+    log_langgraph_event(
+        "section_regeneration",
+        "fail_section_regeneration",
+        "failed",
+        retry_count=state.retry_count,
+        route=state.section,
+        errors=state.validation_errors,
+    )
     joined_errors = "; ".join(state.validation_errors or [])
     raise BlueprintGenerationError(f"섹션 재생성 품질 검증 재시도에 실패했습니다: {joined_errors}")
 
@@ -591,26 +660,31 @@ def build_blueprint_pipeline_graph():
 
 def analyze_idea_node(state: BlueprintPipelineState) -> dict:
     """LangGraph 아이디어 분석 노드입니다."""
+    log_langgraph_event("blueprint_pipeline", "analyze_idea", "start", retry_count=state.retry_count)
     return {"analysis": analyze_idea_step(state).analysis}
 
 
 def design_features_node(state: BlueprintPipelineState) -> dict:
     """LangGraph 기능 설계 노드입니다."""
+    log_langgraph_event("blueprint_pipeline", "design_features", "start", retry_count=state.retry_count)
     return {"feature_design": design_features_step(state).feature_design}
 
 
 def design_api_node(state: BlueprintPipelineState) -> dict:
     """LangGraph API 설계 노드입니다."""
+    log_langgraph_event("blueprint_pipeline", "design_api", "start", retry_count=state.retry_count)
     return {"api_design": design_api_step(state).api_design}
 
 
 def design_database_node(state: BlueprintPipelineState) -> dict:
     """LangGraph DB 설계 노드입니다."""
+    log_langgraph_event("blueprint_pipeline", "design_database", "start", retry_count=state.retry_count)
     return {"database_design": design_database_step(state).database_design}
 
 
 def design_diagrams_node(state: BlueprintPipelineState) -> dict:
     """LangGraph 다이어그램 설계 노드입니다."""
+    log_langgraph_event("blueprint_pipeline", "design_diagrams", "start", retry_count=state.retry_count)
     if state.analysis is None or state.api_design is None or state.database_design is None:
         raise BlueprintGenerationError("다이어그램 설계 전에 분석, API, DB 설계 결과가 필요합니다.")
 
@@ -624,6 +698,7 @@ def design_diagrams_node(state: BlueprintPipelineState) -> dict:
 
 def design_planning_node(state: BlueprintPipelineState) -> dict:
     """LangGraph 계획 설계 노드입니다."""
+    log_langgraph_event("blueprint_pipeline", "design_planning", "start", retry_count=state.retry_count)
     if (
         state.analysis is None
         or state.feature_design is None
@@ -648,6 +723,7 @@ def design_planning_node(state: BlueprintPipelineState) -> dict:
 
 def assemble_blueprint_node(state: BlueprintPipelineState) -> dict:
     """LangGraph 최종 조립 노드입니다."""
+    log_langgraph_event("blueprint_pipeline", "assemble_blueprint", "start", retry_count=state.retry_count)
     return {"blueprint": assemble_blueprint_step(state).blueprint}
 
 
@@ -657,6 +733,13 @@ def validate_blueprint_node(state: BlueprintPipelineState) -> dict:
         raise BlueprintGenerationError("검증 전에 최종 설계도 결과가 필요합니다.")
 
     errors = collect_blueprint_quality_errors(state.blueprint)
+    log_langgraph_event(
+        "blueprint_pipeline",
+        "validate_blueprint",
+        "validated",
+        retry_count=state.retry_count,
+        errors=errors,
+    )
     if not errors:
         return {
             "validation_errors": [],
@@ -675,20 +758,52 @@ def validate_blueprint_node(state: BlueprintPipelineState) -> dict:
 def route_validation_feedback(state: BlueprintPipelineState) -> str:
     """검증 결과에 따라 완료, 실패, 또는 필요한 재생성 섹션으로 분기합니다."""
     if not state.validation_errors:
+        log_langgraph_event(
+            "blueprint_pipeline",
+            "validate_blueprint",
+            "route",
+            retry_count=state.retry_count,
+            route="complete",
+        )
         return "complete"
     if state.retry_count >= MAX_OPENAI_PIPELINE_ATTEMPTS:
+        log_langgraph_event(
+            "blueprint_pipeline",
+            "validate_blueprint",
+            "route",
+            retry_count=state.retry_count,
+            route="fail",
+            errors=state.validation_errors,
+        )
         return "fail"
+    log_langgraph_event(
+        "blueprint_pipeline",
+        "validate_blueprint",
+        "route",
+        retry_count=state.retry_count,
+        route=state.next_route,
+        errors=state.validation_errors,
+    )
     return state.next_route
 
 
 def fail_validation_node(state: BlueprintPipelineState) -> dict:
     """조건부 재시도 한도를 넘긴 검증 실패를 생성 오류로 변환합니다."""
+    log_langgraph_event(
+        "blueprint_pipeline",
+        "fail_validation",
+        "failed",
+        retry_count=state.retry_count,
+        route=state.next_route,
+        errors=state.validation_errors,
+    )
     joined_errors = "; ".join(state.validation_errors or [])
     raise BlueprintGenerationError(f"섹션별 설계도 품질 검증 재시도에 실패했습니다: {joined_errors}")
 
 
 def design_final_sections_node(state: BlueprintPipelineState) -> dict:
     """retry 경로에서 다이어그램과 계획을 함께 다시 생성합니다."""
+    log_langgraph_event("blueprint_pipeline", "design_final_sections", "start", retry_count=state.retry_count)
     updated_state = design_final_sections_step(state)
     return {
         "diagram_design": updated_state.diagram_design,
