@@ -66,6 +66,10 @@ export function getBlueprint(id) {
   return requestJson(`/api/v1/blueprints/${id}`);
 }
 
+export function listBlueprintRunEvents(id) {
+  return requestJson(`/api/v1/blueprints/${id}/runs`);
+}
+
 export function reviseBlueprint(id, instruction) {
   return requestJson(`/api/v1/blueprints/${id}/revise`, {
     method: "POST",

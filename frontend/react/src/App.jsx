@@ -30,6 +30,7 @@ import {
   getBlueprint,
   getHealth,
   listBlueprints,
+  listBlueprintRunEvents,
   regenerateBlueprintSection,
   reviseBlueprint,
 } from "./api.js";
@@ -66,6 +67,7 @@ const RESULT_TABS = [
   { id: "database", label: "DB" },
   { id: "diagrams", label: "다이어그램" },
   { id: "plan", label: "계획" },
+  { id: "runs", label: "실행 이력" },
 ];
 
 const SECTION_REGENERATION_BY_TAB = {
@@ -312,6 +314,9 @@ function App() {
   const [isShowingSectionPreview, setIsShowingSectionPreview] = useState(false);
   const [regenerationNotice, setRegenerationNotice] = useState("");
   const [lastRegenerationFailure, setLastRegenerationFailure] = useState(null);
+  const [runEvents, setRunEvents] = useState([]);
+  const [isLoadingRunEvents, setIsLoadingRunEvents] = useState(false);
+  const [runEventsError, setRunEventsError] = useState("");
   const [error, setError] = useState(null);
   // 개발 중 현재 연결된 API 서버와 백엔드 모드를 빠르게 확인하기 위한 상태입니다.
   const [environmentStatus, setEnvironmentStatus] = useState({
@@ -346,6 +351,31 @@ function App() {
     return items;
   }
 
+  async function refreshRunEvents(blueprintId = selectedBlueprintId) {
+    if (!blueprintId) {
+      setRunEvents([]);
+      setRunEventsError("");
+      return [];
+    }
+
+    setIsLoadingRunEvents(true);
+    setRunEventsError("");
+
+    try {
+      const response = await listBlueprintRunEvents(blueprintId);
+      const items = response.items || [];
+      setRunEvents(items);
+      return items;
+    } catch (err) {
+      const userError = toUserError(err);
+      setRunEvents([]);
+      setRunEventsError(userError.message);
+      return [];
+    } finally {
+      setIsLoadingRunEvents(false);
+    }
+  }
+
   // health endpoint를 호출해 개발 환경 상태 패널에 표시할 값을 갱신합니다.
   async function refreshEnvironmentStatus() {
     setEnvironmentStatus((current) => ({ ...current, loading: true, error: "" }));
@@ -369,6 +399,10 @@ function App() {
   useEffect(() => {
     refreshEnvironmentStatus();
   }, []);
+
+  useEffect(() => {
+    refreshRunEvents(selectedBlueprintId);
+  }, [selectedBlueprintId]);
 
   useEffect(() => {
     if (!isGenerating) {
@@ -405,7 +439,9 @@ function App() {
       setActiveResultTab("summary");
       const items = await refreshRecent();
       const savedBlueprint = items.find((item) => item.idea.trim() === idea.trim());
-      setSelectedBlueprintId(savedBlueprint?.id || null);
+      const savedBlueprintId = savedBlueprint?.id || null;
+      setSelectedBlueprintId(savedBlueprintId);
+      await refreshRunEvents(savedBlueprintId);
     } catch (err) {
       setError(toUserError(err));
     } finally {
@@ -427,6 +463,7 @@ function App() {
       setBlueprint(stored.result);
       setIdea(getBaseIdea(stored.idea));
       setSelectedBlueprintId(stored.id);
+      await refreshRunEvents(stored.id);
       setActiveResultTab("summary");
     } catch (err) {
       setError(toUserError(err));
@@ -447,6 +484,8 @@ function App() {
       if (selectedBlueprintId === id) {
         setBlueprint(null);
         setSelectedBlueprintId(null);
+        setRunEvents([]);
+        setRunEventsError("");
         setSectionPreview(null);
         setIsShowingSectionPreview(false);
         setRegenerationNotice("");
@@ -516,6 +555,7 @@ function App() {
       });
       setRegenerationNotice(`재생성 실패: ${userError.message}`);
     } finally {
+      await refreshRunEvents(selectedBlueprintId);
       setIsRegeneratingSection(false);
     }
   }
@@ -547,6 +587,7 @@ function App() {
       setBlueprint(applied.result);
       setIdea(getBaseIdea(applied.idea));
       setSelectedBlueprintId(applied.id);
+      await refreshRunEvents(applied.id);
       setSectionPreview(null);
       setIsShowingSectionPreview(false);
       setRegenerationNotice("미리보기를 새 개선안으로 저장했습니다.");
@@ -575,6 +616,7 @@ function App() {
       setBlueprint(revised.result);
       setIdea(getBaseIdea(revised.idea));
       setSelectedBlueprintId(revised.id);
+      await refreshRunEvents(revised.id);
       setActiveResultTab("summary");
       await refreshRecent();
       scrollToSection("result");
@@ -788,6 +830,7 @@ function App() {
                 canRegenerate={Boolean(selectedBlueprintId) && !isRevising && !isApplyingSectionPreview}
                 hasPreview={Boolean(sectionPreview)}
                 isApplyingSectionPreview={isApplyingSectionPreview}
+                isLoadingRunEvents={isLoadingRunEvents}
                 isPreviewVisible={Boolean(isShowingSectionPreview && sectionPreview)}
                 isRegeneratingSection={isRegeneratingSection}
                 onApplySectionPreview={handleApplySectionPreview}
@@ -798,6 +841,8 @@ function App() {
                 previewSection={sectionPreview?.section || null}
                 regenerationFailure={lastRegenerationFailure}
                 regenerationNotice={regenerationNotice}
+                runEvents={runEvents}
+                runEventsError={runEventsError}
                 setActiveTab={setActiveResultTab}
               />
             )}
@@ -907,6 +952,7 @@ function BlueprintView({
   canRegenerate,
   hasPreview,
   isApplyingSectionPreview,
+  isLoadingRunEvents,
   isPreviewVisible,
   isRegeneratingSection,
   onApplySectionPreview,
@@ -917,6 +963,8 @@ function BlueprintView({
   previewSection,
   regenerationFailure,
   regenerationNotice,
+  runEvents,
+  runEventsError,
   setActiveTab,
 }) {
   const qualityItems = buildQualityItems(blueprint);
@@ -1110,9 +1158,113 @@ function BlueprintView({
             </Section>
           </div>
         )}
+
+        {activeTab === "runs" && (
+          <RunEventsPanel
+            error={runEventsError}
+            isLoading={isLoadingRunEvents}
+            runEvents={runEvents}
+          />
+        )}
       </div>
     </div>
   );
+}
+
+function RunEventsPanel({ error, isLoading, runEvents }) {
+  const retryCount = runEvents.filter((event) => event.retry_count > 0).length;
+  const errorCount = runEvents.reduce((total, event) => total + event.error_count, 0);
+
+  return (
+    <Section title="실행 이력" description="LangGraph 노드 실행, 재시도, 라우팅 결과를 확인합니다.">
+      <div className="run-summary">
+        <Metric label="events" value={runEvents.length} />
+        <Metric label="retries" value={retryCount} />
+        <Metric label="errors" value={errorCount} />
+      </div>
+
+      {isLoading && (
+        <div className="run-empty">
+          <Loader2 className="spin" size={18} />
+          실행 이력을 불러오는 중입니다.
+        </div>
+      )}
+
+      {!isLoading && error && (
+        <div className="run-empty error">
+          <X size={18} />
+          {error}
+        </div>
+      )}
+
+      {!isLoading && !error && runEvents.length === 0 && (
+        <div className="run-empty">
+          <Info size={18} />
+          아직 저장된 실행 이력이 없습니다.
+        </div>
+      )}
+
+      {!isLoading && !error && runEvents.length > 0 && (
+        <div className="run-event-list">
+          {runEvents.map((event) => (
+            <article className="run-event-item" key={event.id}>
+              <div className="run-event-main">
+                <span className={`run-phase ${getRunPhaseTone(event)}`}>{getRunPhaseLabel(event)}</span>
+                <div>
+                  <h3>{event.node_name}</h3>
+                  <p>
+                    {event.run_type}
+                    {event.section ? ` / ${SECTION_LABELS[event.section] || event.section}` : ""}
+                  </p>
+                </div>
+              </div>
+              <div className="run-event-meta">
+                <span>retry {event.retry_count}</span>
+                <span>route {event.route || "-"}</span>
+                <span>errors {event.error_count}</span>
+                <time>{formatRunEventTime(event.created_at)}</time>
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
+    </Section>
+  );
+}
+
+function getRunPhaseLabel(event) {
+  if (event.phase === "failed" || event.route === "fail") {
+    return "failed";
+  }
+  if (event.error_count > 0 || event.route === "retry") {
+    return "retry";
+  }
+  if (event.route === "complete") {
+    return "complete";
+  }
+  return event.phase;
+}
+
+function getRunPhaseTone(event) {
+  const label = getRunPhaseLabel(event);
+  if (label === "failed") {
+    return "failed";
+  }
+  if (label === "retry") {
+    return "retry";
+  }
+  if (label === "complete") {
+    return "complete";
+  }
+  return "default";
+}
+
+function formatRunEventTime(value) {
+  if (!value) {
+    return "-";
+  }
+
+  return new Date(value).toLocaleString();
 }
 
 // 백엔드 validator를 통과한 결과임을 사용자가 볼 수 있게 요약 검증 항목을 만듭니다.
