@@ -210,10 +210,12 @@ def to_blueprint_run_event_response(run_event: StoredBlueprintRunEvent) -> Bluep
         run_type=run_event.run_type,
         section=run_event.section,
         node_name=run_event.node_name,
+        specialist_id=run_event.specialist_id,
         phase=run_event.phase,
         retry_count=run_event.retry_count,
         route=run_event.route,
         error_count=run_event.error_count,
+        error_messages=run_event.error_messages,
         created_at=run_event.created_at,
     )
 

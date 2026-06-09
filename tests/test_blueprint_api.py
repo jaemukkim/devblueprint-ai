@@ -216,6 +216,8 @@ def test_list_blueprint_run_events_returns_saved_events(monkeypatch) -> None:
         retry_count=1,
         route="complete",
         error_count=0,
+        specialist_id="implementation_planner",
+        error_messages=["validation feedback was cleared"],
     )
 
     response = client.get(f"/api/v1/blueprints/{blueprint_id}/runs")
@@ -227,6 +229,8 @@ def test_list_blueprint_run_events_returns_saved_events(monkeypatch) -> None:
     assert items[0]["run_type"] == "blueprint_generation"
     assert items[0]["node_name"] == "validate_blueprint"
     assert items[0]["route"] == "complete"
+    assert items[0]["specialist_id"] == "implementation_planner"
+    assert items[0]["error_messages"] == ["validation feedback was cleared"]
 
 
 def test_list_blueprint_run_events_returns_404_when_missing() -> None:
@@ -346,6 +350,7 @@ def test_regenerate_blueprint_section_records_run_events(monkeypatch) -> None:
             "route",
             retry_count=1,
             route="complete",
+            specialist_id="feature_designer",
         )
         return current_blueprint
 
@@ -363,6 +368,8 @@ def test_regenerate_blueprint_section_records_run_events(monkeypatch) -> None:
     assert items[0]["section"] == "features"
     assert items[0]["node_name"] == "validate_selected_section"
     assert items[0]["route"] == "complete"
+    assert items[0]["specialist_id"] == "feature_designer"
+    assert items[0]["error_messages"] == []
 
 
 def test_apply_regenerated_section_preview_saves_new_blueprint(monkeypatch) -> None:

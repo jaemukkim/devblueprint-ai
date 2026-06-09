@@ -57,6 +57,8 @@ MAX_OPENAI_GENERATION_ATTEMPTS = 3
 # 섹션별 생성은 비용이 크므로 전체 재시도는 최소한만 허용하되, 품질 피드백을 한 번은 반영할 수 있게 둡니다.
 MAX_OPENAI_PIPELINE_ATTEMPTS = 2
 REGENERATABLE_SECTIONS = {"features", "api", "database", "diagrams", "planning"}
+MAX_RUN_EVENT_ERROR_MESSAGES = 5
+MAX_RUN_EVENT_ERROR_MESSAGE_LENGTH = 500
 BLUEPRINT_PIPELINE_STEPS = (
     "analyze_idea",
     "design_features",
@@ -74,6 +76,13 @@ BLUEPRINT_SPECIALIST_IDS = (
     "diagram_designer",
     "implementation_planner",
 )
+SECTION_SPECIALIST_IDS = {
+    "features": "feature_designer",
+    "api": "api_designer",
+    "database": "database_designer",
+    "diagrams": "diagram_designer",
+    "planning": "implementation_planner",
+}
 REVISION_MARKER = "수정:"
 REVISION_STOPWORDS = {
     "같은",
@@ -149,10 +158,12 @@ class PendingBlueprintRunEvent:
     """설계도 ID가 확정되기 전까지 임시로 모아두는 LangGraph 실행 이력입니다."""
 
     node_name: str
+    specialist_id: str | None
     phase: str
     retry_count: int
     route: str | None
     error_count: int
+    error_messages: list[str]
 
 
 @dataclass
@@ -314,6 +325,7 @@ def log_langgraph_event(
     retry_count: int = 0,
     route: str | None = None,
     errors: list[str] | None = None,
+    specialist_id: str | None = None,
 ) -> None:
     """LangGraph 실행 흐름을 서버 로그에서 추적할 수 있게 기록합니다."""
     logger.info(
@@ -325,17 +337,33 @@ def log_langgraph_event(
         route or "-",
         len(errors or []),
     )
+    error_messages = summarize_run_event_errors(errors)
     run_context = active_blueprint_run_context.get()
     if run_context is not None:
         run_context.append(
             PendingBlueprintRunEvent(
                 node_name=node_name,
+                specialist_id=specialist_id,
                 phase=phase,
                 retry_count=retry_count,
                 route=route,
                 error_count=len(errors or []),
+                error_messages=error_messages,
             )
         )
+
+
+def summarize_run_event_errors(errors: list[str] | None) -> list[str]:
+    """실행 이력에 저장할 오류 메시지를 UI에서 읽을 수 있는 길이로 줄입니다."""
+    return [
+        error[:MAX_RUN_EVENT_ERROR_MESSAGE_LENGTH]
+        for error in (errors or [])[:MAX_RUN_EVENT_ERROR_MESSAGES]
+    ]
+
+
+def get_section_specialist_id(section: str) -> str | None:
+    """재생성 섹션에 대응되는 specialist id를 반환합니다."""
+    return SECTION_SPECIALIST_IDS.get(section)
 
 
 def start_blueprint_run(run_type: str, section: str | None = None) -> Token[BlueprintRunContext | None]:
@@ -360,10 +388,12 @@ def flush_blueprint_run_events(blueprint_id: str) -> None:
             run_type=run_context.run_type,
             section=run_context.section,
             node_name=event.node_name,
+            specialist_id=event.specialist_id,
             phase=event.phase,
             retry_count=event.retry_count,
             route=event.route,
             error_count=event.error_count,
+            error_messages=event.error_messages,
         )
 
 
@@ -398,6 +428,7 @@ def regenerate_selected_section_node(state: SectionRegenerationState) -> dict:
         "start",
         retry_count=state.retry_count,
         route=state.section,
+        specialist_id=get_section_specialist_id(state.section),
     )
     blueprint = normalize_blueprint_output(
         regenerate_blueprint_section_once(
@@ -432,6 +463,7 @@ def validate_selected_section_node(state: SectionRegenerationState) -> dict:
         retry_count=state.retry_count,
         route=state.section,
         errors=errors,
+        specialist_id=get_section_specialist_id(state.section),
     )
     if not errors:
         return {"validation_errors": []}
@@ -452,6 +484,7 @@ def route_section_regeneration(state: SectionRegenerationState) -> str:
             "route",
             retry_count=state.retry_count,
             route="complete",
+            specialist_id=get_section_specialist_id(state.section),
         )
         return "complete"
     if state.retry_count >= MAX_OPENAI_GENERATION_ATTEMPTS:
@@ -462,6 +495,7 @@ def route_section_regeneration(state: SectionRegenerationState) -> str:
             retry_count=state.retry_count,
             route="fail",
             errors=state.validation_errors,
+            specialist_id=get_section_specialist_id(state.section),
         )
         return "fail"
     log_langgraph_event(
@@ -471,6 +505,7 @@ def route_section_regeneration(state: SectionRegenerationState) -> str:
         retry_count=state.retry_count,
         route="retry",
         errors=state.validation_errors,
+        specialist_id=get_section_specialist_id(state.section),
     )
     return "retry"
 
@@ -484,6 +519,7 @@ def fail_section_regeneration_node(state: SectionRegenerationState) -> dict:
         retry_count=state.retry_count,
         route=state.section,
         errors=state.validation_errors,
+        specialist_id=get_section_specialist_id(state.section),
     )
     joined_errors = "; ".join(state.validation_errors or [])
     raise BlueprintGenerationError(f"섹션 재생성 품질 검증 재시도에 실패했습니다: {joined_errors}")
@@ -805,7 +841,13 @@ def get_blueprint_specialists() -> dict[str, BlueprintSpecialist]:
 
 def run_blueprint_specialist(specialist: BlueprintSpecialist, state: BlueprintPipelineState) -> dict:
     """Specialist 정의에 따라 LangGraph 노드를 실행하고 결과 key를 맞춰 반환합니다."""
-    log_langgraph_event("blueprint_pipeline", specialist.node_name, "start", retry_count=state.retry_count)
+    log_langgraph_event(
+        "blueprint_pipeline",
+        specialist.node_name,
+        "start",
+        retry_count=state.retry_count,
+        specialist_id=specialist.id,
+    )
     return {specialist.output_key: specialist.run(state)}
 
 

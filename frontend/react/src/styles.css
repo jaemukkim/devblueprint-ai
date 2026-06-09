@@ -1266,6 +1266,23 @@ textarea:focus {
   overflow-wrap: anywhere;
 }
 
+.run-error-list {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  border-top: 1px solid #e2e8f0;
+  padding: 10px 0 0 18px;
+  color: #9f1239;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.45;
+}
+
+.run-error-list li {
+  overflow-wrap: anywhere;
+}
+
 .consideration-list,
 .implementation-list {
   display: grid;

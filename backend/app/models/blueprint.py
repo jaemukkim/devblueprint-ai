@@ -37,10 +37,12 @@ class BlueprintRunEventModel(Base):
     run_type: Mapped[str] = mapped_column(Text, nullable=False)
     section: Mapped[str | None] = mapped_column(Text, nullable=True)
     node_name: Mapped[str] = mapped_column(Text, nullable=False)
+    specialist_id: Mapped[str | None] = mapped_column(Text, nullable=True)
     phase: Mapped[str] = mapped_column(Text, nullable=False)
     retry_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     route: Mapped[str | None] = mapped_column(Text, nullable=True)
     error_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    error_messages: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
     created_at: Mapped[DateTime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

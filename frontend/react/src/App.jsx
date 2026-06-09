@@ -1215,6 +1215,7 @@ function RunEventsPanel({ error, isLoading, runEvents }) {
                   <p>
                     {event.run_type}
                     {event.section ? ` / ${SECTION_LABELS[event.section] || event.section}` : ""}
+                    {event.specialist_id ? ` / ${event.specialist_id}` : ""}
                   </p>
                 </div>
               </div>
@@ -1224,6 +1225,13 @@ function RunEventsPanel({ error, isLoading, runEvents }) {
                 <span>errors {event.error_count}</span>
                 <time>{formatRunEventTime(event.created_at)}</time>
               </div>
+              {event.error_messages?.length > 0 && (
+                <ul className="run-error-list">
+                  {event.error_messages.map((message, index) => (
+                    <li key={`${event.id}-${index}`}>{message}</li>
+                  ))}
+                </ul>
+              )}
             </article>
           ))}
         </div>

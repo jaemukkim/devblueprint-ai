@@ -172,10 +172,12 @@ class BlueprintRunEventResponse(BaseModel):
     run_type: str
     section: str | None = None
     node_name: str
+    specialist_id: str | None = None
     phase: str
     retry_count: int
     route: str | None = None
     error_count: int
+    error_messages: list[str] = Field(default_factory=list)
     created_at: datetime
 
 
