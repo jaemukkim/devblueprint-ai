@@ -1,4 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
+from collections.abc import Callable
 from contextvars import ContextVar, Token
 from dataclasses import dataclass
 from hashlib import sha256
@@ -65,6 +66,14 @@ BLUEPRINT_PIPELINE_STEPS = (
     "design_planning",
     "assemble_blueprint",
 )
+BLUEPRINT_SPECIALIST_IDS = (
+    "idea_analyst",
+    "feature_designer",
+    "api_designer",
+    "database_designer",
+    "diagram_designer",
+    "implementation_planner",
+)
 REVISION_MARKER = "수정:"
 REVISION_STOPWORDS = {
     "같은",
@@ -108,6 +117,17 @@ class BlueprintPipelineState:
     def idea(self) -> str:
         """프롬프트 단계에서 반복 사용하는 정규화된 아이디어 문장입니다."""
         return self.payload.idea.strip()
+
+
+@dataclass(frozen=True)
+class BlueprintSpecialist:
+    """LangGraph 노드 안에서 실행되는 역할 기반 설계 전문가 정의입니다."""
+
+    id: str
+    node_name: str
+    role: str
+    output_key: str
+    run: Callable[[BlueprintPipelineState], object]
 
 
 @dataclass
@@ -735,47 +755,94 @@ def build_blueprint_pipeline_graph():
     return graph.compile()
 
 
-def analyze_idea_node(state: BlueprintPipelineState) -> dict:
-    """LangGraph 아이디어 분석 노드입니다."""
-    log_langgraph_event("blueprint_pipeline", "analyze_idea", "start", retry_count=state.retry_count)
-    return {"analysis": analyze_idea_step(state).analysis}
+def get_blueprint_specialists() -> dict[str, BlueprintSpecialist]:
+    """전체 설계도 생성에 참여하는 역할 기반 specialist 목록을 반환합니다."""
+    return {
+        "idea_analyst": BlueprintSpecialist(
+            id="idea_analyst",
+            node_name="analyze_idea",
+            role="서비스 아이디어를 사용자, 핵심 엔티티, MVP 범위로 분해합니다.",
+            output_key="analysis",
+            run=run_idea_analyst,
+        ),
+        "feature_designer": BlueprintSpecialist(
+            id="feature_designer",
+            node_name="design_features",
+            role="아이디어 분석 결과를 바탕으로 MVP 기능과 기술 스택을 설계합니다.",
+            output_key="feature_design",
+            run=run_feature_designer,
+        ),
+        "api_designer": BlueprintSpecialist(
+            id="api_designer",
+            node_name="design_api",
+            role="기능을 지원하는 REST API 엔드포인트와 입출력 필드를 설계합니다.",
+            output_key="api_design",
+            run=run_api_designer,
+        ),
+        "database_designer": BlueprintSpecialist(
+            id="database_designer",
+            node_name="design_database",
+            role="기능과 API를 저장할 PostgreSQL 친화적인 데이터 모델을 설계합니다.",
+            output_key="database_design",
+            run=run_database_designer,
+        ),
+        "diagram_designer": BlueprintSpecialist(
+            id="diagram_designer",
+            node_name="design_diagrams",
+            role="API와 DB 설계를 반영한 Mermaid ERD와 시퀀스 다이어그램을 설계합니다.",
+            output_key="diagram_design",
+            run=run_diagram_designer,
+        ),
+        "implementation_planner": BlueprintSpecialist(
+            id="implementation_planner",
+            node_name="design_planning",
+            role="구현 순서, 비기능 요구사항, 보안 고려사항을 정리합니다.",
+            output_key="planning_design",
+            run=run_implementation_planner,
+        ),
+    }
 
 
-def design_features_node(state: BlueprintPipelineState) -> dict:
-    """LangGraph 기능 설계 노드입니다."""
-    log_langgraph_event("blueprint_pipeline", "design_features", "start", retry_count=state.retry_count)
-    return {"feature_design": design_features_step(state).feature_design}
+def run_blueprint_specialist(specialist: BlueprintSpecialist, state: BlueprintPipelineState) -> dict:
+    """Specialist 정의에 따라 LangGraph 노드를 실행하고 결과 key를 맞춰 반환합니다."""
+    log_langgraph_event("blueprint_pipeline", specialist.node_name, "start", retry_count=state.retry_count)
+    return {specialist.output_key: specialist.run(state)}
 
 
-def design_api_node(state: BlueprintPipelineState) -> dict:
-    """LangGraph API 설계 노드입니다."""
-    log_langgraph_event("blueprint_pipeline", "design_api", "start", retry_count=state.retry_count)
-    return {"api_design": design_api_step(state).api_design}
+def run_idea_analyst(state: BlueprintPipelineState) -> IdeaAnalysis:
+    """아이디어 분석 specialist를 실행합니다."""
+    return analyze_idea_step(state).analysis
 
 
-def design_database_node(state: BlueprintPipelineState) -> dict:
-    """LangGraph DB 설계 노드입니다."""
-    log_langgraph_event("blueprint_pipeline", "design_database", "start", retry_count=state.retry_count)
-    return {"database_design": design_database_step(state).database_design}
+def run_feature_designer(state: BlueprintPipelineState) -> FeatureDesign:
+    """기능 설계 specialist를 실행합니다."""
+    return design_features_step(state).feature_design
 
 
-def design_diagrams_node(state: BlueprintPipelineState) -> dict:
-    """LangGraph 다이어그램 설계 노드입니다."""
-    log_langgraph_event("blueprint_pipeline", "design_diagrams", "start", retry_count=state.retry_count)
+def run_api_designer(state: BlueprintPipelineState) -> ApiDesign:
+    """API 설계 specialist를 실행합니다."""
+    return design_api_step(state).api_design
+
+
+def run_database_designer(state: BlueprintPipelineState) -> DatabaseDesign:
+    """DB 설계 specialist를 실행합니다."""
+    return design_database_step(state).database_design
+
+
+def run_diagram_designer(state: BlueprintPipelineState) -> DiagramDesign:
+    """다이어그램 설계 specialist를 실행합니다."""
     if state.analysis is None or state.api_design is None or state.database_design is None:
         raise BlueprintGenerationError("다이어그램 설계 전에 분석, API, DB 설계 결과가 필요합니다.")
 
-    diagram_design = request_structured_output_from_openai(
+    return request_structured_output_from_openai(
         build_diagram_design_prompt(state.idea, state.analysis, state.api_design, state.database_design),
         DiagramDesign,
         validation_feedback=state.validation_feedback,
     )
-    return {"diagram_design": diagram_design}
 
 
-def design_planning_node(state: BlueprintPipelineState) -> dict:
-    """LangGraph 계획 설계 노드입니다."""
-    log_langgraph_event("blueprint_pipeline", "design_planning", "start", retry_count=state.retry_count)
+def run_implementation_planner(state: BlueprintPipelineState) -> PlanningDesign:
+    """구현 계획 specialist를 실행합니다."""
     if (
         state.analysis is None
         or state.feature_design is None
@@ -784,7 +851,7 @@ def design_planning_node(state: BlueprintPipelineState) -> dict:
     ):
         raise BlueprintGenerationError("계획 설계 전에 분석, 기능, API, DB 설계 결과가 필요합니다.")
 
-    planning_design = request_structured_output_from_openai(
+    return request_structured_output_from_openai(
         build_planning_design_prompt(
             state.idea,
             state.analysis,
@@ -795,7 +862,36 @@ def design_planning_node(state: BlueprintPipelineState) -> dict:
         PlanningDesign,
         validation_feedback=state.validation_feedback,
     )
-    return {"planning_design": planning_design}
+
+
+def analyze_idea_node(state: BlueprintPipelineState) -> dict:
+    """LangGraph 아이디어 분석 노드입니다."""
+    return run_blueprint_specialist(get_blueprint_specialists()["idea_analyst"], state)
+
+
+def design_features_node(state: BlueprintPipelineState) -> dict:
+    """LangGraph 기능 설계 노드입니다."""
+    return run_blueprint_specialist(get_blueprint_specialists()["feature_designer"], state)
+
+
+def design_api_node(state: BlueprintPipelineState) -> dict:
+    """LangGraph API 설계 노드입니다."""
+    return run_blueprint_specialist(get_blueprint_specialists()["api_designer"], state)
+
+
+def design_database_node(state: BlueprintPipelineState) -> dict:
+    """LangGraph DB 설계 노드입니다."""
+    return run_blueprint_specialist(get_blueprint_specialists()["database_designer"], state)
+
+
+def design_diagrams_node(state: BlueprintPipelineState) -> dict:
+    """LangGraph 다이어그램 설계 노드입니다."""
+    return run_blueprint_specialist(get_blueprint_specialists()["diagram_designer"], state)
+
+
+def design_planning_node(state: BlueprintPipelineState) -> dict:
+    """LangGraph 계획 설계 노드입니다."""
+    return run_blueprint_specialist(get_blueprint_specialists()["implementation_planner"], state)
 
 
 def assemble_blueprint_node(state: BlueprintPipelineState) -> dict:

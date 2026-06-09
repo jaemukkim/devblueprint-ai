@@ -22,12 +22,14 @@ from app.schemas.blueprint import (
 from app.schemas.blueprint import BlueprintRequest
 from app.services.blueprint_generator import (
     BLUEPRINT_PIPELINE_STEPS,
+    BLUEPRINT_SPECIALIST_IDS,
     BlueprintPipelineState,
     analyze_idea_step,
     assemble_blueprint_step,
     design_api_step,
     design_database_step,
     design_features_step,
+    get_blueprint_specialists,
     generate_blueprint_pipeline_with_retry,
     generate_blueprint_with_retry,
     regenerate_blueprint_section_with_retry,
@@ -258,6 +260,19 @@ def test_blueprint_pipeline_steps_are_named_for_graph_migration() -> None:
         "design_planning",
         "assemble_blueprint",
     )
+
+
+def test_blueprint_specialists_define_roles_and_outputs() -> None:
+    specialists = get_blueprint_specialists()
+
+    assert tuple(specialists) == BLUEPRINT_SPECIALIST_IDS
+    assert specialists["idea_analyst"].node_name == "analyze_idea"
+    assert specialists["feature_designer"].output_key == "feature_design"
+    assert specialists["api_designer"].output_key == "api_design"
+    assert specialists["database_designer"].output_key == "database_design"
+    assert specialists["diagram_designer"].output_key == "diagram_design"
+    assert specialists["implementation_planner"].output_key == "planning_design"
+    assert all(specialist.role for specialist in specialists.values())
 
 
 def test_blueprint_pipeline_state_steps_pass_outputs_forward(monkeypatch) -> None:
