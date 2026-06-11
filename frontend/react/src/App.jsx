@@ -1174,6 +1174,13 @@ function BlueprintView({
 function RunEventsPanel({ error, isLoading, runEvents }) {
   const retryCount = runEvents.filter((event) => event.retry_count > 0).length;
   const errorCount = runEvents.reduce((total, event) => total + event.error_count, 0);
+  const timedEvents = runEvents.filter((event) => Number.isFinite(event.duration_ms));
+  const totalDurationMs = timedEvents.reduce((total, event) => total + event.duration_ms, 0);
+  const averageDurationMs = timedEvents.length > 0 ? Math.round(totalDurationMs / timedEvents.length) : null;
+  const slowestEvent = timedEvents.reduce(
+    (slowest, event) => (slowest === null || event.duration_ms > slowest.duration_ms ? event : slowest),
+    null,
+  );
 
   return (
     <Section title="실행 이력" description="LangGraph 노드 실행, 재시도, 라우팅 결과를 확인합니다.">
@@ -1181,7 +1188,17 @@ function RunEventsPanel({ error, isLoading, runEvents }) {
         <Metric label="events" value={runEvents.length} />
         <Metric label="retries" value={retryCount} />
         <Metric label="errors" value={errorCount} />
+        <Metric label="total" value={formatDuration(totalDurationMs)} />
+        <Metric label="avg" value={averageDurationMs === null ? "-" : formatDuration(averageDurationMs)} />
       </div>
+
+      {slowestEvent && (
+        <div className="run-slowest">
+          <span>가장 오래 걸린 단계</span>
+          <strong>{slowestEvent.node_name}</strong>
+          <small>{formatDuration(slowestEvent.duration_ms)}</small>
+        </div>
+      )}
 
       {isLoading && (
         <div className="run-empty">
@@ -1223,6 +1240,7 @@ function RunEventsPanel({ error, isLoading, runEvents }) {
                 <span>retry {event.retry_count}</span>
                 <span>route {event.route || "-"}</span>
                 <span>errors {event.error_count}</span>
+                <span>time {formatDuration(event.duration_ms)}</span>
                 <time>{formatRunEventTime(event.created_at)}</time>
               </div>
               {event.error_messages?.length > 0 && (
@@ -1276,6 +1294,18 @@ function formatRunEventTime(value) {
 }
 
 // 백엔드 validator를 통과한 결과임을 사용자가 볼 수 있게 요약 검증 항목을 만듭니다.
+function formatDuration(value) {
+  if (!Number.isFinite(value)) {
+    return "-";
+  }
+
+  if (value < 1000) {
+    return `${value}ms`;
+  }
+
+  return `${(value / 1000).toFixed(1)}s`;
+}
+
 function buildQualityItems(blueprint) {
   const endpointKeys = blueprint.api_spec.map((endpoint) => `${endpoint.method} ${endpoint.path}`);
   const uniqueEndpointCount = new Set(endpointKeys).size;

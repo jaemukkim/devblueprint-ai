@@ -216,6 +216,7 @@ def to_blueprint_run_event_response(run_event: StoredBlueprintRunEvent) -> Bluep
         route=run_event.route,
         error_count=run_event.error_count,
         error_messages=run_event.error_messages,
+        duration_ms=run_event.duration_ms,
         created_at=run_event.created_at,
     )
 

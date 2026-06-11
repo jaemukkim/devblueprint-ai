@@ -178,6 +178,7 @@ class BlueprintRunEventResponse(BaseModel):
     route: str | None = None
     error_count: int
     error_messages: list[str] = Field(default_factory=list)
+    duration_ms: int | None = None
     created_at: datetime
 
 

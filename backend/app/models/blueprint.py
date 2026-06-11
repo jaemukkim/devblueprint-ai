@@ -43,6 +43,7 @@ class BlueprintRunEventModel(Base):
     route: Mapped[str | None] = mapped_column(Text, nullable=True)
     error_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     error_messages: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[DateTime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

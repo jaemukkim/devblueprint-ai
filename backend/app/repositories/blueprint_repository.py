@@ -41,6 +41,7 @@ class StoredBlueprintRunEvent:
     route: str | None
     error_count: int
     error_messages: list[str]
+    duration_ms: int | None
     created_at: datetime
 
 
@@ -90,6 +91,7 @@ class BlueprintRepository(ABC):
         route: str | None = None,
         error_count: int = 0,
         error_messages: list[str] | None = None,
+        duration_ms: int | None = None,
     ) -> StoredBlueprintRunEvent:
         """설계도 생성 그래프의 노드 실행 이력을 저장합니다."""
 
@@ -185,6 +187,7 @@ class InMemoryBlueprintRepository(BlueprintRepository):
         route: str | None = None,
         error_count: int = 0,
         error_messages: list[str] | None = None,
+        duration_ms: int | None = None,
     ) -> StoredBlueprintRunEvent:
         run_event = StoredBlueprintRunEvent(
             id=str(uuid4()),
@@ -198,6 +201,7 @@ class InMemoryBlueprintRepository(BlueprintRepository):
             route=route,
             error_count=error_count,
             error_messages=deepcopy(error_messages or []),
+            duration_ms=duration_ms,
             created_at=datetime.now(timezone.utc),
         )
         self._run_events.setdefault(blueprint_id, []).append(run_event)
@@ -286,6 +290,7 @@ class PostgresBlueprintRepository(BlueprintRepository):
         route: str | None = None,
         error_count: int = 0,
         error_messages: list[str] | None = None,
+        duration_ms: int | None = None,
     ) -> StoredBlueprintRunEvent:
         with self._session_factory() as db:
             run_event_model = BlueprintRunEventModel(
@@ -300,6 +305,7 @@ class PostgresBlueprintRepository(BlueprintRepository):
                 route=route,
                 error_count=error_count,
                 error_messages=error_messages or [],
+                duration_ms=duration_ms,
             )
             db.add(run_event_model)
             db.commit()
@@ -383,6 +389,7 @@ class PostgresBlueprintRepository(BlueprintRepository):
             route=run_event_model.route,
             error_count=run_event_model.error_count,
             error_messages=run_event_model.error_messages or [],
+            duration_ms=run_event_model.duration_ms,
             created_at=run_event_model.created_at,
         )
 

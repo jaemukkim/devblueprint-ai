@@ -173,6 +173,7 @@ def test_in_memory_blueprint_repository_records_run_events() -> None:
         error_count=1,
         specialist_id="feature_designer",
         error_messages=["features must include requested concept"],
+        duration_ms=1234,
     )
     run_events = repository.list_run_events(stored_blueprint.id)
 
@@ -185,6 +186,7 @@ def test_in_memory_blueprint_repository_records_run_events() -> None:
     assert run_events[0].route == "retry"
     assert run_events[0].specialist_id == "feature_designer"
     assert run_events[0].error_messages == ["features must include requested concept"]
+    assert run_events[0].duration_ms == 1234
 
 
 def test_in_memory_blueprint_repository_deletes_run_events_with_blueprint() -> None:

@@ -4,6 +4,7 @@ from contextvars import ContextVar, Token
 from dataclasses import dataclass
 from hashlib import sha256
 import logging
+from time import perf_counter
 
 from app.core.config import settings
 from app.repositories.blueprint_repository import StoredBlueprint, blueprint_repository
@@ -164,6 +165,7 @@ class PendingBlueprintRunEvent:
     route: str | None
     error_count: int
     error_messages: list[str]
+    duration_ms: int | None = None
 
 
 @dataclass
@@ -326,6 +328,7 @@ def log_langgraph_event(
     route: str | None = None,
     errors: list[str] | None = None,
     specialist_id: str | None = None,
+    duration_ms: int | None = None,
 ) -> None:
     """LangGraph 실행 흐름을 서버 로그에서 추적할 수 있게 기록합니다."""
     logger.info(
@@ -349,6 +352,7 @@ def log_langgraph_event(
                 route=route,
                 error_count=len(errors or []),
                 error_messages=error_messages,
+                duration_ms=duration_ms,
             )
         )
 
@@ -359,6 +363,11 @@ def summarize_run_event_errors(errors: list[str] | None) -> list[str]:
         error[:MAX_RUN_EVENT_ERROR_MESSAGE_LENGTH]
         for error in (errors or [])[:MAX_RUN_EVENT_ERROR_MESSAGES]
     ]
+
+
+def elapsed_ms(started_at: float) -> int:
+    """LangGraph 노드 실행 시간을 UI에서 읽기 쉬운 밀리초 값으로 변환합니다."""
+    return max(0, int((perf_counter() - started_at) * 1000))
 
 
 def get_section_specialist_id(section: str) -> str | None:
@@ -394,6 +403,7 @@ def flush_blueprint_run_events(blueprint_id: str) -> None:
             route=event.route,
             error_count=event.error_count,
             error_messages=event.error_messages,
+            duration_ms=event.duration_ms,
         )
 
 
@@ -422,6 +432,7 @@ def build_section_regeneration_graph():
 
 def regenerate_selected_section_node(state: SectionRegenerationState) -> dict:
     """선택된 섹션만 다시 생성하고 전체 설계도 형태로 합칩니다."""
+    started_at = perf_counter()
     log_langgraph_event(
         "section_regeneration",
         "regenerate_selected_section",
@@ -438,6 +449,15 @@ def regenerate_selected_section_node(state: SectionRegenerationState) -> dict:
             state.instruction,
             state.validation_feedback,
         )
+    )
+    log_langgraph_event(
+        "section_regeneration",
+        "regenerate_selected_section",
+        "completed",
+        retry_count=state.retry_count,
+        route=state.section,
+        specialist_id=get_section_specialist_id(state.section),
+        duration_ms=elapsed_ms(started_at),
     )
     return {"blueprint": blueprint}
 
@@ -848,7 +868,17 @@ def run_blueprint_specialist(specialist: BlueprintSpecialist, state: BlueprintPi
         retry_count=state.retry_count,
         specialist_id=specialist.id,
     )
-    return {specialist.output_key: specialist.run(state)}
+    started_at = perf_counter()
+    result = specialist.run(state)
+    log_langgraph_event(
+        "blueprint_pipeline",
+        specialist.node_name,
+        "completed",
+        retry_count=state.retry_count,
+        specialist_id=specialist.id,
+        duration_ms=elapsed_ms(started_at),
+    )
+    return {specialist.output_key: result}
 
 
 def run_idea_analyst(state: BlueprintPipelineState) -> IdeaAnalysis:
@@ -939,7 +969,16 @@ def design_planning_node(state: BlueprintPipelineState) -> dict:
 def assemble_blueprint_node(state: BlueprintPipelineState) -> dict:
     """LangGraph 최종 조립 노드입니다."""
     log_langgraph_event("blueprint_pipeline", "assemble_blueprint", "start", retry_count=state.retry_count)
-    return {"blueprint": assemble_blueprint_step(state).blueprint}
+    started_at = perf_counter()
+    blueprint = assemble_blueprint_step(state).blueprint
+    log_langgraph_event(
+        "blueprint_pipeline",
+        "assemble_blueprint",
+        "completed",
+        retry_count=state.retry_count,
+        duration_ms=elapsed_ms(started_at),
+    )
+    return {"blueprint": blueprint}
 
 
 def validate_blueprint_node(state: BlueprintPipelineState) -> dict:

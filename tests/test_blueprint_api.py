@@ -218,6 +218,7 @@ def test_list_blueprint_run_events_returns_saved_events(monkeypatch) -> None:
         error_count=0,
         specialist_id="implementation_planner",
         error_messages=["validation feedback was cleared"],
+        duration_ms=987,
     )
 
     response = client.get(f"/api/v1/blueprints/{blueprint_id}/runs")
@@ -231,6 +232,7 @@ def test_list_blueprint_run_events_returns_saved_events(monkeypatch) -> None:
     assert items[0]["route"] == "complete"
     assert items[0]["specialist_id"] == "implementation_planner"
     assert items[0]["error_messages"] == ["validation feedback was cleared"]
+    assert items[0]["duration_ms"] == 987
 
 
 def test_list_blueprint_run_events_returns_404_when_missing() -> None:
