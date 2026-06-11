@@ -1,3 +1,6 @@
+from io import BytesIO
+from zipfile import ZipFile
+
 from fastapi.testclient import TestClient
 
 from app.core.config import settings
@@ -241,6 +244,30 @@ def test_list_blueprint_run_events_returns_404_when_missing() -> None:
     response = client.get("/api/v1/blueprints/missing-blueprint-id/runs")
 
     assert response.status_code == 404
+
+
+def test_export_blueprint_package_returns_zip(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "use_openai", False)
+    blueprint_repository.clear()
+
+    client.post(
+        "/api/v1/blueprint/generate",
+        json={"idea": "산출물 내보내기를 확인하는 테스트 서비스"},
+    )
+    blueprint_id = client.get("/api/v1/blueprints").json()["items"][0]["id"]
+
+    response = client.get(f"/api/v1/blueprints/{blueprint_id}/export.zip")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/zip"
+    with ZipFile(BytesIO(response.content)) as archive:
+        names = set(archive.namelist())
+        assert "README.md" in names
+        assert "api-spec.md" in names
+        assert "database-schema.md" in names
+        assert "quality-report.md" in names
+        assert "erd.mmd" in names
+        assert archive.read("erd.mmd").decode("utf-8").startswith("erDiagram")
 
 
 def test_get_blueprint_returns_404_when_missing() -> None:

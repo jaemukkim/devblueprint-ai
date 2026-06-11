@@ -94,6 +94,31 @@ export function applyBlueprintSectionPreview(id, section, result, instruction) {
   });
 }
 
+export async function downloadBlueprintExport(id, idea) {
+  const response = await fetch(`${API_BASE_URL}/api/v1/blueprints/${id}/export.zip`);
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    const errorDetail = normalizeErrorDetail(body.detail, response.status);
+    throw createRequestError(
+      errorDetail.message,
+      classifyApiError(response.status, errorDetail),
+      response.status,
+      null,
+      errorDetail,
+    );
+  }
+
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  const safeName = idea.trim().replace(/[\\/:*?"<>|]+/g, "").replace(/^[ .]+|[ .]+$/g, "");
+  link.href = url;
+  link.download = `${(safeName || "devblueprint-export").slice(0, 80)}.zip`;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
 export function deleteBlueprint(id) {
   return requestJson(`/api/v1/blueprints/${id}`, {
     method: "DELETE",

@@ -27,6 +27,7 @@ import {
   applyBlueprintSectionPreview,
   createBlueprint,
   deleteBlueprint,
+  downloadBlueprintExport,
   getBlueprint,
   getHealth,
   listBlueprints,
@@ -541,6 +542,19 @@ function App() {
     }
   }
 
+  async function handleDownloadExport() {
+    if (!selectedBlueprintId || !displayedBlueprint) {
+      setError(toUserError("먼저 저장된 설계도를 선택해 주세요."));
+      return;
+    }
+
+    try {
+      await downloadBlueprintExport(selectedBlueprintId, selectedIdea);
+    } catch (err) {
+      setError(toUserError(err));
+    }
+  }
+
   function handleResultNav(tabId) {
     setActiveResultTab(tabId);
     scrollToSection("result");
@@ -690,10 +704,16 @@ function App() {
           <button type="button" onClick={() => handleResultNav("diagrams")}>시퀀스</button>
         </nav>
         {displayedBlueprint ? (
-          <button className="nav-action" onClick={() => downloadMarkdown(selectedIdea, displayedBlueprint)}>
-            <Download size={18} />
-            Markdown
-          </button>
+          <div className="nav-actions">
+            <button className="nav-action" onClick={() => downloadMarkdown(selectedIdea, displayedBlueprint)}>
+              <Download size={18} />
+              Markdown
+            </button>
+            <button className="nav-action" onClick={handleDownloadExport} disabled={!selectedBlueprintId}>
+              <Download size={18} />
+              Export ZIP
+            </button>
+          </div>
         ) : (
           <a className="nav-action" href="#workspace">
             설계 시작

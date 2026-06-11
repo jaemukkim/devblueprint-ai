@@ -139,6 +139,18 @@ button:disabled {
   font-weight: 800;
 }
 
+.nav-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.nav-action:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .eyebrow {
   margin: 0 0 6px;
   color: var(--muted);

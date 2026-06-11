@@ -1,7 +1,7 @@
 [
   {
     "id": "recipe_recommendation",
-    "idea": "냉장고에 있는 재료를 입력하면 만들 수 있는 요리를 추천하고 레시피와 요리 유튜브 채널을 함께 보여주는 서비스",
+    "idea": "냉장고에 있는 재료를 입력하면 만들 수 있는 요리를 추천하고 레시피와 관련 영상 링크를 함께 보여주는 서비스",
     "expected_domain_terms": ["recipes", "ingredients", "recommendations"],
     "expected_korean_terms": ["요리", "재료", "레시피"]
   },
@@ -13,7 +13,7 @@
   },
   {
     "id": "reservation_matching",
-    "idea": "동네 풋살장을 예약하고 인원 부족 팀과 개인 참가자를 매칭해주는 예약 서비스",
+    "idea": "동네 풋살장을 예약하고 인원 부족 팀과 개인 참가자를 매칭해 주는 예약 서비스",
     "expected_domain_terms": ["reservations", "venues", "matches"],
     "expected_korean_terms": ["풋살", "예약", "매칭"]
   },

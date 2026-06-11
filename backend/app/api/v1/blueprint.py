@@ -1,3 +1,5 @@
+from urllib.parse import quote
+
 from fastapi import APIRouter, HTTPException, Response, status
 
 from app.repositories.blueprint_repository import StoredBlueprint, StoredBlueprintRunEvent, blueprint_repository
@@ -15,6 +17,7 @@ from app.schemas.blueprint import (
     StoredBlueprintResponse,
 )
 from app.services.llm_client import BlueprintGenerationError
+from app.services.blueprint_export import build_blueprint_export_zip
 from app.services.blueprint_generator import (
     DuplicateBlueprintRevisionError,
     apply_blueprint_section_preview,
@@ -75,6 +78,22 @@ def list_blueprint_run_events(blueprint_id: str) -> BlueprintRunEventListRespons
     run_events = blueprint_repository.list_run_events(blueprint_id)
     return BlueprintRunEventListResponse(
         items=[to_blueprint_run_event_response(run_event) for run_event in run_events]
+    )
+
+
+@blueprints_router.get("/{blueprint_id}/export.zip")
+def export_blueprint_package(blueprint_id: str) -> Response:
+    stored_blueprint = blueprint_repository.get_by_id(blueprint_id)
+
+    if stored_blueprint is None:
+        raise build_not_found_error("내보낼 설계도를 찾을 수 없습니다.")
+
+    archive = build_blueprint_export_zip(stored_blueprint.idea, stored_blueprint.result)
+    filename = quote(build_export_file_name(stored_blueprint.idea))
+    return Response(
+        content=archive,
+        media_type="application/zip",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{filename}"},
     )
 
 
@@ -219,6 +238,13 @@ def to_blueprint_run_event_response(run_event: StoredBlueprintRunEvent) -> Bluep
         duration_ms=run_event.duration_ms,
         created_at=run_event.created_at,
     )
+
+
+def build_export_file_name(idea: str) -> str:
+    """설계도 아이디어를 안전한 ZIP 파일명으로 변환합니다."""
+    safe_name = "".join(character for character in idea.strip() if character not in '\\/:*?"<>|')
+    normalized_name = " ".join(safe_name.split()).strip(". ")
+    return f"{(normalized_name or 'devblueprint-export')[:80]}.zip"
 
 
 # 프론트가 문자열 파싱 없이 오류 유형과 조치 문구를 구분할 수 있도록 표준 detail 구조를 만듭니다.
