@@ -187,6 +187,41 @@ function buildRecentBlueprintItems(items) {
   });
 }
 
+// 저장된 설계도 목록을 검색, 초안/개선안 필터, 정렬 조건에 맞춰 화면 표시용으로 좁힙니다.
+function filterRecentBlueprintItems(items, { query, filter, sort }) {
+  const normalizedQuery = query.trim().toLowerCase();
+
+  return items
+    .filter((item) => {
+      if (filter === "drafts" && item.isRevision) {
+        return false;
+      }
+      if (filter === "revisions" && !item.isRevision) {
+        return false;
+      }
+      if (!normalizedQuery) {
+        return true;
+      }
+
+      return [
+        item.baseIdea,
+        item.idea,
+        item.revision_instruction || "",
+        item.revisionSummary || "",
+        item.versionLabel,
+      ].some((value) => value.toLowerCase().includes(normalizedQuery));
+    })
+    .sort((a, b) => {
+      if (sort === "oldest") {
+        return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+      }
+      if (sort === "title") {
+        return a.baseIdea.localeCompare(b.baseIdea);
+      }
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    });
+}
+
 function toUserError(error) {
   // 사용자에게 보여줄 오류 제목과 조치 문구를 표준화합니다.
   if (typeof error === "string") {
@@ -295,6 +330,9 @@ function App() {
   const [idea, setIdea] = useState("");
   const [blueprint, setBlueprint] = useState(null);
   const [recentBlueprints, setRecentBlueprints] = useState([]);
+  const [recentSearch, setRecentSearch] = useState("");
+  const [recentFilter, setRecentFilter] = useState("all");
+  const [recentSort, setRecentSort] = useState("newest");
   const [selectedBlueprintId, setSelectedBlueprintId] = useState(null);
   const [loading, setLoading] = useState(false);
   // 설계도 생성 요청 중인지 구분해 홈 입력 패널에 전용 피드백을 표시합니다.
@@ -342,6 +380,13 @@ function App() {
   const recentBlueprintItems = useMemo(
     () => buildRecentBlueprintItems(recentBlueprints),
     [recentBlueprints],
+  );
+  const visibleRecentBlueprintItems = useMemo(
+    () => filterRecentBlueprintItems(
+      recentBlueprintItems,
+      { query: recentSearch, filter: recentFilter, sort: recentSort },
+    ),
+    [recentBlueprintItems, recentSearch, recentFilter, recentSort],
   );
 
   async function refreshRecent() {
@@ -771,11 +816,48 @@ function App() {
               </button>
             </div>
 
+            <div className="recent-controls">
+              <input
+                aria-label="저장된 설계도 검색"
+                onChange={(event) => setRecentSearch(event.target.value)}
+                placeholder="아이디어, 개선 요청 검색"
+                type="search"
+                value={recentSearch}
+              />
+              <div className="recent-filter-tabs" aria-label="설계도 유형 필터">
+                {[
+                  ["all", "전체"],
+                  ["drafts", "초안"],
+                  ["revisions", "개선안"],
+                ].map(([value, label]) => (
+                  <button
+                    className={recentFilter === value ? "active" : ""}
+                    key={value}
+                    onClick={() => setRecentFilter(value)}
+                    type="button"
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <select
+                aria-label="저장된 설계도 정렬"
+                onChange={(event) => setRecentSort(event.target.value)}
+                value={recentSort}
+              >
+                <option value="newest">최신순</option>
+                <option value="oldest">오래된순</option>
+                <option value="title">이름순</option>
+              </select>
+            </div>
+
             <div className="recent-list">
               {recentBlueprintItems.length === 0 ? (
                 <p className="empty-text">저장된 설계도가 아직 없습니다.</p>
+              ) : visibleRecentBlueprintItems.length === 0 ? (
+                <p className="empty-text">검색 조건에 맞는 설계도가 없습니다.</p>
               ) : (
-                recentBlueprintItems.map((item) => (
+                visibleRecentBlueprintItems.map((item) => (
                   <div className="recent-row" key={item.id}>
                     <button
                       className={item.id === selectedBlueprintId ? "recent-item active" : "recent-item"}
@@ -1502,6 +1584,8 @@ function getFeatureInstructionTokens(instruction) {
 
 // 설계도 생성 결과가 어떤 품질 기준을 통과했는지 카드 형태로 보여줍니다.
 function QualityChecks({ items }) {
+  const report = buildQualityReport(items);
+
   return (
     <section className="quality-card">
       <div className="quality-heading">
@@ -1514,6 +1598,10 @@ function QualityChecks({ items }) {
           검증 완료
         </span>
       </div>
+      <div className="quality-report-summary">
+        <strong>{report.score}점 · {report.status}</strong>
+        <span>{report.passedCount}/{items.length}개 기준 통과</span>
+      </div>
       <div className="quality-grid">
         {items.map((item) => (
           <div className={item.passed ? "quality-item passed" : "quality-item"} key={item.label}>
@@ -1525,10 +1613,35 @@ function QualityChecks({ items }) {
           </div>
         ))}
       </div>
+      {report.recommendations.length > 0 && (
+        <div className="quality-recommendations">
+          <strong>개선 제안</strong>
+          <ul>
+            {report.recommendations.map((recommendation) => (
+              <li key={recommendation}>{recommendation}</li>
+            ))}
+          </ul>
+        </div>
+      )}
     </section>
   );
 }
 // 비기능 요구사항과 보안 고려사항을 렌더링하는 컴포넌트입니다.
+// 품질 체크 결과를 점수와 사용자에게 보여줄 개선 제안으로 변환합니다.
+function buildQualityReport(items) {
+  const passedItems = items.filter((item) => item.passed);
+  const score = Math.round((passedItems.length / Math.max(items.length, 1)) * 100);
+  const failedItems = items.filter((item) => !item.passed);
+  const recommendations = failedItems.map((item) => `${item.label}: ${item.value} 항목을 다시 생성하거나 보강하세요.`);
+
+  return {
+    score,
+    passedCount: passedItems.length,
+    status: score >= 90 ? "구현 준비도 높음" : score >= 70 ? "보강 후 구현 권장" : "재생성 권장",
+    recommendations,
+  };
+}
+
 function DesignConsiderationList({ items }) {
   if (!items.length) {
     return <p className="empty-text plan-empty">아직 정리된 항목이 없습니다.</p>;
