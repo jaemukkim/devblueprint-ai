@@ -35,20 +35,20 @@ def build_readme(idea: str, blueprint: BlueprintResponse) -> str:
             blueprint.overview,
             "",
             "## 기술 스택",
-            f"- Backend: {', '.join(blueprint.tech_stack.backend) or '없음'}",
-            f"- Frontend: {', '.join(blueprint.tech_stack.frontend) or '없음'}",
-            f"- Database: {', '.join(blueprint.tech_stack.database) or '없음'}",
-            f"- AI: {', '.join(blueprint.tech_stack.ai) or '없음'}",
+            f"- Backend: {format_inline_items(blueprint.tech_stack.backend)}",
+            f"- Frontend: {format_inline_items(blueprint.tech_stack.frontend)}",
+            f"- Database: {format_inline_items(blueprint.tech_stack.database)}",
+            f"- AI: {format_inline_items(blueprint.tech_stack.ai)}",
             f"- 선정 이유: {blueprint.tech_stack.rationale}",
             "",
             "## 포함 파일",
-            "- features.md",
-            "- api-spec.md",
-            "- database-schema.md",
-            "- implementation-plan.md",
-            "- quality-report.md",
-            "- erd.mmd",
-            "- sequence.mmd",
+            "- features.md: 핵심 기능과 우선순위",
+            "- api-spec.md: REST API 초안",
+            "- database-schema.md: 데이터베이스 테이블과 컬럼",
+            "- implementation-plan.md: 비기능 요구사항, 보안 고려사항, 구현 계획",
+            "- quality-report.md: 설계 결과 품질 체크",
+            "- erd.mmd: Mermaid ERD",
+            "- sequence.mmd: Mermaid 시퀀스 다이어그램",
             "",
         ]
     )
@@ -116,7 +116,11 @@ def build_quality_report_markdown(blueprint: BlueprintResponse) -> str:
         ("API 범위", 4 <= len(blueprint.api_spec) <= 12, f"{len(blueprint.api_spec)}개 API"),
         ("DB 범위", 3 <= len(blueprint.database_schema) <= 8, f"{len(blueprint.database_schema)}개 테이블"),
         ("ERD 형식", blueprint.database_erd.strip().startswith("erDiagram"), "Mermaid erDiagram"),
-        ("시퀀스 형식", blueprint.sequence_diagram.strip().startswith("sequenceDiagram"), "Mermaid sequenceDiagram"),
+        (
+            "시퀀스 형식",
+            blueprint.sequence_diagram.strip().startswith("sequenceDiagram"),
+            "Mermaid sequenceDiagram",
+        ),
         ("구현 계획", len(blueprint.implementation_plan) >= 3, f"{len(blueprint.implementation_plan)}개 단계"),
     ]
     passed = sum(1 for _, is_passed, _ in checks if is_passed)
@@ -128,6 +132,11 @@ def build_quality_report_markdown(blueprint: BlueprintResponse) -> str:
         lines.append(f"- **{label}**: {status} ({value})")
 
     return "\n".join(lines) + "\n"
+
+
+def format_inline_items(items: list[str]) -> str:
+    """짧은 문자열 목록을 한 줄 표시용 텍스트로 변환합니다."""
+    return ", ".join(items) if items else "없음"
 
 
 def format_fields(fields: list) -> str:

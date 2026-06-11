@@ -372,6 +372,12 @@ function App() {
       : null),
     [blueprint, sectionPreview],
   );
+  const previewChangeItems = useMemo(
+    () => (sectionPreview && blueprint
+      ? getSectionChangeItems(blueprint, sectionPreview.result, sectionPreview.section)
+      : []),
+    [blueprint, sectionPreview],
+  );
 
   const selectedIdea = useMemo(() => {
     const selected = recentBlueprints.find((item) => item.id === selectedBlueprintId);
@@ -940,6 +946,7 @@ function App() {
                 onRetryRegeneration={handleRetryRegeneration}
                 onTogglePreview={() => setIsShowingSectionPreview((current) => !current)}
                 previewChangeCount={previewChangeCount}
+                previewChangeItems={previewChangeItems}
                 previewSection={sectionPreview?.section || null}
                 regenerationFailure={lastRegenerationFailure}
                 regenerationNotice={regenerationNotice}
@@ -1062,6 +1069,7 @@ function BlueprintView({
   onRetryRegeneration,
   onTogglePreview,
   previewChangeCount,
+  previewChangeItems,
   previewSection,
   regenerationFailure,
   regenerationNotice,
@@ -1099,6 +1107,16 @@ function BlueprintView({
                   : "저장되지 않은 결과지만 원본과 거의 같습니다. 요청을 더 구체적으로 입력해 보세요."
                 : "현재 저장본을 기준으로 preview를 만듭니다.")}
             </p>
+            {isPreviewVisible && previewChangeItems.length > 0 && (
+              <ul className="section-change-list">
+                {previewChangeItems.slice(0, 6).map((item) => (
+                  <li key={`${item.type}-${item.label}`}>
+                    <span className={`section-change-type ${item.type}`}>{getSectionChangeTypeLabel(item.type)}</span>
+                    <span>{item.label}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
           <div className="section-regeneration-actions">
             {isPreviewVisible && previewChangeCount > 0 && (
@@ -1451,22 +1469,47 @@ function buildQualityItems(blueprint) {
 }
 
 function getSectionChangeCount(originalBlueprint, previewBlueprint, section) {
+  return getSectionChangeItems(originalBlueprint, previewBlueprint, section).length;
+}
+
+function getSectionChangeItems(originalBlueprint, previewBlueprint, section) {
   if (section === "diagrams") {
-    return getChangedDiagramLabels(originalBlueprint, previewBlueprint).length;
+    return getChangedDiagramLabels(originalBlueprint, previewBlueprint).map((label) => ({
+      label,
+      type: "changed",
+    }));
   }
 
-  const originalItems = getComparableSectionItems(originalBlueprint, section);
-  const previewItems = getComparableSectionItems(previewBlueprint, section);
+  const originalItems = getComparableSectionEntries(originalBlueprint, section);
+  const previewItems = getComparableSectionEntries(previewBlueprint, section);
   const maxLength = Math.max(originalItems.length, previewItems.length);
-  let changeCount = 0;
+  const changes = [];
 
   for (let index = 0; index < maxLength; index += 1) {
-    if (JSON.stringify(originalItems[index] || null) !== JSON.stringify(previewItems[index] || null)) {
-      changeCount += 1;
+    const originalItem = originalItems[index] || null;
+    const previewItem = previewItems[index] || null;
+
+    if (JSON.stringify(originalItem?.value || null) === JSON.stringify(previewItem?.value || null)) {
+      continue;
     }
+
+    changes.push({
+      label: previewItem?.label || originalItem?.label || `${SECTION_LABELS[section] || "항목"} ${index + 1}`,
+      type: originalItem && previewItem ? "changed" : previewItem ? "added" : "removed",
+    });
   }
 
-  return changeCount;
+  return changes;
+}
+
+function getSectionChangeTypeLabel(type) {
+  if (type === "added") {
+    return "추가";
+  }
+  if (type === "removed") {
+    return "삭제";
+  }
+  return "수정";
 }
 
 // 섹션별 변경 수를 사용자가 보는 단위에 맞춰 설명합니다.
@@ -1498,31 +1541,60 @@ function normalizeDiagramText(source) {
 }
 
 function getComparableSectionItems(blueprint, section) {
+  return getComparableSectionEntries(blueprint, section).map((item) => item.value);
+}
+
+function getComparableSectionEntries(blueprint, section) {
   if (!blueprint) {
     return [];
   }
 
   if (section === "features") {
-    return [blueprint.overview, blueprint.tech_stack, ...blueprint.features];
+    return [
+      { label: "서비스 개요", value: blueprint.overview },
+      { label: "기술 스택", value: blueprint.tech_stack },
+      ...(blueprint.features || []).map((feature, index) => ({
+        label: feature.name || `기능 ${index + 1}`,
+        value: feature,
+      })),
+    ];
   }
 
   if (section === "api") {
-    return blueprint.api_spec || [];
+    return (blueprint.api_spec || []).map((endpoint, index) => ({
+      label: `${endpoint.method || "API"} ${endpoint.path || index + 1}`,
+      value: endpoint,
+    }));
   }
 
   if (section === "database") {
-    return blueprint.database_schema || [];
+    return (blueprint.database_schema || []).map((table, index) => ({
+      label: table.name || `테이블 ${index + 1}`,
+      value: table,
+    }));
   }
 
   if (section === "diagrams") {
-    return [blueprint.database_erd, blueprint.sequence_diagram];
+    return [
+      { label: "ERD", value: blueprint.database_erd },
+      { label: "시퀀스", value: blueprint.sequence_diagram },
+    ];
   }
 
   if (section === "planning") {
     return [
-      ...(blueprint.non_functional_requirements || []),
-      ...(blueprint.security_considerations || []),
-      ...(blueprint.implementation_plan || []),
+      ...(blueprint.non_functional_requirements || []).map((item, index) => ({
+        label: `비기능: ${item.title || index + 1}`,
+        value: item,
+      })),
+      ...(blueprint.security_considerations || []).map((item, index) => ({
+        label: `보안: ${item.title || index + 1}`,
+        value: item,
+      })),
+      ...(blueprint.implementation_plan || []).map((step, index) => ({
+        label: `계획: ${step.title || index + 1}`,
+        value: step,
+      })),
     ];
   }
 
