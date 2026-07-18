@@ -1,7 +1,7 @@
 [
   {
     "id": "recipe_recommendation",
-    "idea": "냉장고에 있는 재료를 입력하면 만들 수 있는 요리를 추천하고 레시피와 관련 영상 링크를 함께 보여주는 서비스",
+    "idea": "냉장고에 있는 재료를 입력하면 만들 수 있는 요리를 추천하고 레시피와 관련 요리 영상 링크를 함께 보여주는 서비스",
     "expected_domain_terms": ["recipes", "ingredients", "recommendations"],
     "expected_korean_terms": ["요리", "재료", "레시피"]
   },
@@ -28,5 +28,35 @@
     "idea": "고객 문의와 주문 처리 상태를 운영자가 한 화면에서 추적하는 관리자 대시보드 서비스",
     "expected_domain_terms": ["tickets", "orders", "operators"],
     "expected_korean_terms": ["관리자", "문의", "주문"]
+  },
+  {
+    "id": "warehouse_inventory",
+    "idea": "소규모 쇼핑몰 창고에서 상품 입출고, 안전 재고, 재주문 알림을 관리하는 재고 관리 서비스",
+    "expected_domain_terms": ["inventory_items", "stock_movements", "reorder_alerts"],
+    "expected_korean_terms": ["재고", "입출고", "재주문"]
+  },
+  {
+    "id": "habit_coaching",
+    "idea": "사용자의 운동과 수면 습관을 기록하고 주간 목표 달성률과 맞춤 코칭 메시지를 제공하는 건강 습관 앱",
+    "expected_domain_terms": ["habits", "goals", "coaching_messages"],
+    "expected_korean_terms": ["운동", "수면", "코칭"]
+  },
+  {
+    "id": "online_classroom",
+    "idea": "강사가 강의 자료와 과제를 올리고 수강생의 제출 현황과 피드백을 관리하는 온라인 클래스 운영 서비스",
+    "expected_domain_terms": ["courses", "assignments", "submissions", "feedback"],
+    "expected_korean_terms": ["강의", "과제", "피드백"]
+  },
+  {
+    "id": "b2b_contract_tracker",
+    "idea": "B2B 영업팀이 고객사 계약, 갱신 일정, 담당자 커뮤니케이션 이력을 관리하는 계약 추적 CRM",
+    "expected_domain_terms": ["accounts", "contracts", "renewals", "communications"],
+    "expected_korean_terms": ["계약", "갱신", "고객사"]
+  },
+  {
+    "id": "pet_care_scheduler",
+    "idea": "반려동물 보호자가 예방접종, 산책, 사료 급여, 병원 방문 일정을 가족과 공유하는 케어 일정 서비스",
+    "expected_domain_terms": ["pets", "care_tasks", "vaccinations", "shared_schedules"],
+    "expected_korean_terms": ["반려동물", "예방접종", "일정"]
   }
 ]

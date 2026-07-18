@@ -267,6 +267,8 @@ def test_export_blueprint_package_returns_zip(monkeypatch) -> None:
         assert "database-schema.md" in names
         assert "quality-report.md" in names
         assert "erd.mmd" in names
+        assert "서비스 아이디어" in archive.read("README.md").decode("utf-8")
+        assert "품질 리포트" in archive.read("quality-report.md").decode("utf-8")
         assert archive.read("erd.mmd").decode("utf-8").startswith("erDiagram")
 
 
